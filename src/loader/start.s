@@ -4,17 +4,6 @@
 
 
 _start:
-    # Write a character to UART to prove _start is running
-    li   t3, 0x10000005      # UART0 LSR
-uart_wait:
-    lb   t4, 0(t3)
-    andi t4, t4, 0x20
-    beqz t4, uart_wait
-
-    li   t3, 0x10000000      # UART0 THR
-    li   t4, 65              # ASCII 'A'
-    sb   t4, 0(t3)
-
     # Setup the stack pointer.
     la   sp, _stack_top
 
