@@ -1,9 +1,15 @@
 {
     "cSpell.words": [
+        "genext",
+        "mcopy",
+        "mklabel",
+        "mkpart",
+        "msdos",
         "nographic",
         "nostdlib",
         "PHDRS",
         "rodata",
+        "virtio",
         "XTRA"
     ]
 }
