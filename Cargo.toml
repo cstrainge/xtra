@@ -3,8 +3,16 @@
 resolver = "2"
 
 members = [
-#    "xtra-kernel",
+    "xtra-kernel",
     "xtra-bootloader" #,
 #    "xtask"
 ]
 
+
+[profile.release]
+panic = "abort"
+lto = true
+
+
+[profile.dev]
+panic = "abort"
