@@ -1,0 +1,160 @@
+
+use core::ptr::{ read_volatile, write_volatile };
+
+
+
+pub const UART_0_BASE: usize = 0x1000_0000;
+
+const UART_THR: usize = 0; // Transmit Holding Register.
+//const UART_RBR: usize = 0; // Receive Buffer Register  .
+const UART_IER: usize = 1; // Interrupt Enable Register.
+const UART_LCR: usize = 3; // Line Control Register.
+const UART_LSR: usize = 5; // Line Status Register.
+
+
+
+pub struct Uart
+{
+    base: usize
+}
+
+
+impl Uart
+{
+    pub const fn new(base: usize) -> Uart
+    {
+        Uart { base }
+    }
+
+    pub fn init_new(base: usize) -> Uart
+    {
+        let uart = Uart::new(base);
+
+        uart.init();
+
+        uart
+    }
+
+    pub fn init(&self)
+    {
+        // Set the Line Control Register to 8 bits, no parity, 1 stop bit.
+        self.set_lcr(0b_0000_0011);
+
+        // Disable the UART interrupts.
+        self.set_ier(0b_0000_0000);
+    }
+
+    pub fn put_char(&self, c: u8)
+    {
+        // Wait for the Transmit Holding Register to be empty.
+        while (self.get_lsr() & 0b_0010_0000) == 0
+        {
+            // Play the waiting game.
+        }
+
+        // Write the character to the Transmit Holding Register.
+        self.set_thr(c);
+    }
+
+    pub fn put_str(&self, s: &str)
+    {
+        for c in s.bytes()
+        {
+            if c == b'\n'
+            {
+                // Convert newline to carriage return + newline.
+                self.put_char(b'\r');
+            }
+
+            self.put_char(c);
+        }
+    }
+
+    pub fn put_int(&self, n: usize)
+    {
+        if n == 0
+        {
+            self.put_char(b'0');
+            return;
+        }
+
+        let mut num = n;
+        let mut digits = [0u8; 20];
+        let mut i = 0;
+
+        while num > 0
+        {
+            digits[i] = (num % 10) as u8 + b'0';
+            num /= 10;
+            i += 1;
+        }
+
+        // Print the digits in reverse order.
+        for j in (0..i).rev()
+        {
+            self.put_char(digits[j]);
+        }
+    }
+
+    pub fn put_hex(&self, n: usize)
+    {
+        self.put_char(b'0');
+        self.put_char(b'x');
+
+        if n == 0
+        {
+            self.put_char(b'0');
+            return;
+        }
+
+        let mut num = n;
+        let mut digits = [0u8; 16];
+        let mut i = 0;
+
+        while num > 0
+        {
+            let digit = (num & 0xF) as u8;
+            digits[i] = if digit < 10 { digit + b'0' } else { digit - 10 + b'a' };
+            num >>= 4;
+            i += 1;
+        }
+
+        // Print the digits in reverse order.
+        for j in (0..i).rev()
+        {
+            self.put_char(digits[j]);
+        }
+    }
+
+    fn set_lcr(&self, lcr: u8)
+    {
+        unsafe
+        {
+            write_volatile((self.base + UART_LCR) as *mut u8, lcr);
+        }
+    }
+
+    fn set_ier(&self, ier: u8)
+    {
+        unsafe
+        {
+            write_volatile((self.base + UART_IER) as *mut u8, ier);
+        }
+    }
+
+    fn get_lsr(&self) -> u8
+    {
+        unsafe
+        {
+            read_volatile((self.base + UART_LSR) as *const u8)
+        }
+    }
+
+    fn set_thr(&self, thr: u8)
+    {
+        unsafe
+        {
+            write_volatile((self.base + UART_THR) as *mut u8, thr);
+        }
+    }
+}

@@ -1,15 +1,28 @@
+
 {
+    "rust-analyzer.cargo.features": [],
+    "rust-analyzer.cargo.buildScripts.enable": false,
+    "rust-analyzer.checkOnSave.enable": false,
+    "rust-analyzer.diagnostics.enable": false,
+
     "cSpell.words": [
         "genext",
+        "imac",
         "mcopy",
         "mklabel",
         "mkpart",
         "msdos",
         "nographic",
+        "noreturn",
         "nostdlib",
+        "objcopy",
         "PHDRS",
         "rodata",
+        "rustc",
+        "rustflags",
+        "Tlink",
         "virtio",
+        "xtask",
         "XTRA"
     ]
 }

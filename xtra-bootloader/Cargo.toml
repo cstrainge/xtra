@@ -1,0 +1,8 @@
+
+[package]
+name = "xtra-bootloader"
+version = "0.0.0"
+edition = "2021"
+authors = ["Chloë Strainge <nullptr.0@gmail.com>"]
+description = "The initial bootloader crate for xtra-os."
+license = "MIT"
