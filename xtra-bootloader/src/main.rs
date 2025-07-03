@@ -17,7 +17,7 @@ use core::{ arch::naked_asm, panic::PanicInfo };
 
 use uart::{ Uart, UART_0_BASE };
 use power::{ power_off, wait_for_interrupt };
-use device_tree::{ DeviceTreeHeader, validate_dtb };
+use device_tree::{ DeviceTree, validate_dtb };
 
 
 
@@ -120,10 +120,29 @@ pub extern "C" fn main(hart_id: usize, device_tree_ptr: *const u8) -> !
     // system.
     validate_device_tree(&uart, device_tree_ptr);
 
-    // We seem to have a valid DTB, so let's print its header information.
-    let dtb_header = DeviceTreeHeader::new(device_tree_ptr);
-    dtb_header.print_header(&uart);
+    // We seem to have a valid DTB, so let's print the information we've found for diagnostics.
+    let device_tree = DeviceTree::new(device_tree_ptr);
 
-    // Shutdown the machine for now.
+    uart.put_str("\n");
+    device_tree.print_tree(&uart);
+
+    // Find the first bootable block device.
+
+    // Take the boot device find a bootable partition.
+
+    // Read the partition table and find the kernel image. We will then:
+    //     * Validate the kernel image.
+    //     * Read it's memory requirements.
+    //     * Find it's entry point.
+
+    // Get information about the system RAM and compute a loading address for the kernel.
+    // Compute the kernel's final entry point address.
+
+    // Load the kernel image into memory.
+
+    // Jump to the kernel's entry point, passing the hart ID and DTB pointer as arguments.
+
+    // If we get here something went wrong, so we will always just power off the system.
+    uart.put_str("\nBootloader erroneously returned to, powering off system...\n");
     power_off()
 }

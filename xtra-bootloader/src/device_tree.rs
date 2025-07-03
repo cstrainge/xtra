@@ -1,5 +1,5 @@
 
-use core::ptr;
+use core::{ mem::offset_of, ptr, str::from_utf8_unchecked };
 
 use crate::uart::Uart;
 
@@ -21,7 +21,7 @@ pub fn validate_dtb(device_tree_ptr: *const u8) -> bool
 }
 
 
-pub struct DeviceTreeHeader
+pub struct DeviceTree
 {
     dtb_base: *const u8,          // Pointer to the start of the device tree blob.
 
@@ -45,28 +45,28 @@ const NOP: u32        = 0x0000_0004;  // No operation marker.
 const END: u32        = 0x0000_0009;  // End marker.
 
 
-impl DeviceTreeHeader
+impl DeviceTree
 {
-    pub fn new(device_tree_ptr: *const u8) -> DeviceTreeHeader
+    pub fn new(device_tree_ptr: *const u8) -> DeviceTree
     {
         // Get the pointer to the start of the device tree header, just past the magic number.
         // We're assuming that the magic number was already validated.
         let mut ptr: *const u32 = unsafe { (device_tree_ptr as *const u32).add(1) };
 
         // Read the device tree header fields.
-        DeviceTreeHeader
+        DeviceTree
         {
             dtb_base: device_tree_ptr,
 
-            total_size: DeviceTreeHeader::read_u32(&mut ptr),
-            off_dt_struct: DeviceTreeHeader::read_u32(&mut ptr),
-            off_dt_strings: DeviceTreeHeader::read_u32(&mut ptr),
-            off_mem_res_map: DeviceTreeHeader::read_u32(&mut ptr),
-            version: DeviceTreeHeader::read_u32(&mut ptr),
-            last_comp_version: DeviceTreeHeader::read_u32(&mut ptr),
-            boot_cpu_id_phys: DeviceTreeHeader::read_u32(&mut ptr),
-            size_dt_strings: DeviceTreeHeader::read_u32(&mut ptr),
-            size_dt_struct: DeviceTreeHeader::read_u32(&mut ptr),
+            total_size: DeviceTree::read_u32(&mut ptr),
+            off_dt_struct: DeviceTree::read_u32(&mut ptr),
+            off_dt_strings: DeviceTree::read_u32(&mut ptr),
+            off_mem_res_map: DeviceTree::read_u32(&mut ptr),
+            version: DeviceTree::read_u32(&mut ptr),
+            last_comp_version: DeviceTree::read_u32(&mut ptr),
+            boot_cpu_id_phys: DeviceTree::read_u32(&mut ptr),
+            size_dt_strings: DeviceTree::read_u32(&mut ptr),
+            size_dt_struct: DeviceTree::read_u32(&mut ptr),
         }
     }
 
@@ -85,7 +85,7 @@ impl DeviceTreeHeader
     }
 
     // Print the device tree header information to the given UART.
-    pub fn print_header(&self, uart: &Uart)
+    pub fn print_tree(&self, uart: &Uart)
     {
         uart.put_str("Device Tree Header:\n");
 
@@ -98,6 +98,31 @@ impl DeviceTreeHeader
         Self::write_int(&uart, "  Boot CPU ID (Physical)             ", self.boot_cpu_id_phys);
         Self::write_int(&uart, "  Size of Strings Block              ", self.size_dt_strings);
         Self::write_int(&uart, "  Size of Structure Block            ", self.size_dt_struct);
+
+        // Let's print the contents of the DTB, this will help us understand what devices are
+        // available in the system.
+        device_tree.iterate_blocks(|tree, offset, name|
+            {
+                // Print the block information.
+                uart.put_str("    Block: ");
+                uart.put_str(name);
+                uart.put_str("\n");
+
+//            // If the block is a node, we can print its properties.
+//            if tree.is_node(offset)
+//            {
+//                tree.iterate_properties(offset, |prop_name, prop_value|
+//                {
+//                    uart.put_str("  Property: ");
+//                    uart.put_str(prop_name);
+//                    uart.put_str(", value: ");
+//                    uart.put_hex(prop_value as usize);
+//                    uart.put_str("\n");
+//                });
+//            }
+
+                true // Continue iterating.
+            });
     }
 
     // Write an integer field value to the UART with a name.
@@ -117,6 +142,155 @@ impl DeviceTreeHeader
         uart.put_str(": ");
         uart.put_hex(value as usize);
         uart.put_str("\n");
+    }
+
+
+    pub fn iterate_blocks<Func>(&self, callback: Func)
+        where
+            Func: Fn(&DeviceTree, usize, &str) -> bool
+    {
+        let mut current_offset = 0;
+
+        let off_dt_struct = self.off_dt_struct as usize;
+        let struct_ptr = unsafe { (self.dtb_base).add(off_dt_struct) as *const u8 };
+
+        loop
+        {
+            // Read the next 32-bit word from the structure block.
+            let word_ptr = unsafe { struct_ptr.add(current_offset) as *const u32 };
+            let word = unsafe { u32::from_be(ptr::read_volatile(word_ptr)) };
+
+            match word
+            {
+                BEGIN_NODE =>
+                    {
+                        // We're at the beginning of a node, so we need to read the node name.
+                        // The format of a node marker is:
+                        // 1. Node marker (4 bytes)
+                        // 2. Node name string, padded to a 4-byte boundary.
+                        // 3. Property markers or end node marker.
+
+                        // Move past the node marker.
+                        self.increment_offset(&mut current_offset, 4);
+
+                        // Get a pointer to the node name offset string.
+                        let name_ptr = unsafe { (struct_ptr).add(current_offset) };
+
+                        // Convert the name pointer to a string.
+                        let ( node_name, name_size ) = self.extract_node_name_to_buffer(name_ptr);
+
+                        // Move past the node name string plus the padding.
+                        self.increment_offset(&mut current_offset, name_size);
+
+                        // Call the callback with the node name and current offset.
+                        if !callback(self, current_offset, node_name)
+                        {
+                            // If the callback returns false, we stop iterating.
+                            break;
+                        }
+                    },
+
+                END_NODE =>
+                    {
+                        // We've reached the end of a node, so we can skip to the next word.
+                        self.increment_offset(&mut current_offset, 4);
+                    },
+
+                PROPERTY =>
+                    {
+                        // We're at a property marker, so we need to read the property size and
+                        // name offset.
+                        // The format of a property is:
+                        // 1. Property marker (4 bytes)
+                        // 2. Property size (4 bytes)
+                        // 3. Property name offset (4 bytes)
+                        // 4. Property value (variable length)
+
+                        // Move past the property marker.
+                        self.increment_offset(&mut current_offset, 4);
+
+                        // Get a pointer to the property size.
+                        let prop_size_ptr = unsafe { struct_ptr.add(current_offset) as *const u32 };
+
+                        // Read the property size from big-endian format.
+                        let prop_size = unsafe { ptr::read_volatile(prop_size_ptr) };
+                        let prop_size = u32::from_be(prop_size);
+
+                        // Move past the property size and the name offset.
+                        self.increment_offset(&mut current_offset, 8);
+
+                        // Move past the property value data, which is padded to a 4-byte boundary.
+                        self.increment_offset(&mut current_offset, prop_size as usize);
+                    },
+
+                NOP =>
+                    {
+                        // No operation marker, just skip it.
+                        self.increment_offset(&mut current_offset, 4);
+                    },
+
+                END =>
+                    {
+                        // End of structure block, break out of the loop.
+                        break;
+                    },
+
+                _ =>
+                    {
+                        // Unknown marker, just skip it.
+                        self.increment_offset(&mut current_offset, 4);
+                    }
+
+            }
+        }
+    }
+
+
+    pub fn iterate_fields<Func>(&self, field_offset: usize, callback: Func)
+        where
+            Func: Fn(&DeviceTree, usize) -> bool
+    {
+        unimplemented!();
+    }
+
+
+    // Move through the device tree structure block, making sure that we don't read past the end
+    // of the data structure. Panic if we do.
+    fn increment_offset(&self, offset: &mut usize, size: usize)
+    {
+        // Increment the offset by the given size, ensuring it is aligned to a 4-byte boundary.
+        *offset += (size + 3) & !3;
+
+        if *offset as u32 >= self.size_dt_struct
+        {
+            panic!("Attempted to read past the end of the device tree structure block.");
+        }
+    }
+
+
+    fn extract_node_name_to_buffer(&self, name_ptr: *const u8) -> ( &str, usize )
+    {
+        const SIZE: usize = 256;
+        static mut NAME_BUFFER: [u8; SIZE] = [0; SIZE];
+
+        unsafe
+        {
+            let mut i = 0;
+
+            while    i < SIZE - 1
+                  && unsafe { *name_ptr.add(i) } != 0
+            {
+                // Copy the byte from the name pointer to the buffer.
+                NAME_BUFFER[i] = unsafe { *name_ptr.add(i) };
+
+                // Move to the next byte in the name pointer and increment the index.
+                i += 1;
+            }
+
+            let node_name = from_utf8_unchecked(&NAME_BUFFER[0..i]);
+
+            ( node_name, i + 1 )
+        }
     }
 
 

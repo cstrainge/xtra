@@ -6,6 +6,7 @@
     "rust-analyzer.diagnostics.enable": false,
 
     "cSpell.words": [
+        "bootable",
         "genext",
         "imac",
         "mcopy",
