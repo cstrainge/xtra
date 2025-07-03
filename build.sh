@@ -1,31 +1,18 @@
 #!/usr/bin/env bash
 
+set -euo pipefail
+
 
 
 # ---- Build the bootloader and the Kernel ---------------------------------------------------------
 
 cargo build --target riscv64imac-unknown-none-elf --release
-if [ $? -ne 0 ]
-then
-    echo "Build failed."
-    exit 1
-fi
 
 mkdir -p build
 cp target/riscv64imac-unknown-none-elf/release/xtra-bootloader build/xtra-bootloader
-if [ $? -ne 0 ]
-then
-    echo "Bootloader copy failed."
-    exit 1
-fi
 
 mkdir -p build/boot
 cp target/riscv64imac-unknown-none-elf/release/xtra-kernel build/boot/kernel.elf
-if [ $? -ne 0 ]
-then
-    echo "Kernel copy failed."
-    exit 1
-fi
 
 
 
@@ -76,4 +63,4 @@ qemu-system-riscv64 \
     -serial stdio \
     -display sdl \
     -smp 2 \
-    -m 1024M
+    -m 2048M
