@@ -43,9 +43,9 @@
 mod uart;
 mod power;
 mod device_tree;
-mod ram;
 mod block_device;
 mod fat32;
+mod ram;
 mod elf;
 
 
@@ -55,6 +55,7 @@ use core::{ arch::naked_asm, panic::PanicInfo };
 use uart::{ Uart, UART_0_BASE };
 use power::{ power_off, wait_for_interrupt };
 use device_tree::{ DeviceTree, validate_dtb };
+use block_device::BlockDevice;
 
 
 
@@ -194,8 +195,32 @@ pub extern "C" fn main(hart_id: usize, device_tree_ptr: *const u8) -> !
     device_tree.print_tree(&uart);
 
     // Find the first bootable block device.
+    let block_device = BlockDevice::find_first_drive(device_tree);
+
+    if block_device.is_none()
+    {
+        uart.put_str("\nNo bootable block device found!\n");
+        uart.put_str("Shutting down system...\n");
+
+        power_off();
+    }
 
     // Take the boot device find a bootable partition.
+    let block_device = block_device.unwrap();
+
+    block_device.initialize();
+
+    let partition = block_device.find_bootable_partition();
+
+    if partition.is_none()
+    {
+        uart.put_str("\nNo bootable partition found on block device!\n");
+        uart.put_str("Shutting down system...\n");
+
+        power_off();
+    }
+
+    let partition = partition.unwrap();
 
     // Read the partition table and find the kernel image. We will then:
     //     * Validate the kernel image.
@@ -210,6 +235,7 @@ pub extern "C" fn main(hart_id: usize, device_tree_ptr: *const u8) -> !
     // Jump to the kernel's entry point, passing the hart ID and DTB pointer as arguments.
 
     // If we get here something went wrong, so we will always just power off the system.
-    uart.put_str("\nBootloader erroneously returned to, powering off system...\n");
+    uart.put_str("\nExecution erroneously returned to the bootloader, powering off system...\n");
+
     power_off()
 }

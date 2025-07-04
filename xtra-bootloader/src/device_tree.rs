@@ -134,7 +134,7 @@ impl DeviceTree
                             uart.put_char(b'[');
                             uart.put_int(prop_value.len());
                             uart.put_str("] = ");
-                            uart.put_hex_bytes(prop_value, Some(4));
+                            uart.put_hex_bytes(prop_value, Some(8));
                         }
 
                         uart.put_str("\n");
@@ -171,9 +171,9 @@ impl DeviceTree
     // The callback receives the name of the node and the current byte offset in the structure
     // block. The callback can then use that offset to iterate through the properties of the node,
     // (if any.)
-    pub fn iterate_blocks<Func>(&self, callback: Func)
+    pub fn iterate_blocks<Func>(&self, mut callback: Func)
         where
-            Func: Fn(usize, &str) -> bool
+            Func: FnMut(usize, &str) -> bool
     {
         let mut current_offset = 0;
 
@@ -271,9 +271,9 @@ impl DeviceTree
     }
 
 
-    pub fn iterate_properties<Func>(&self, base_offset: usize, callback: Func)
+    pub fn iterate_properties<Func>(&self, base_offset: usize, mut callback: Func)
         where
-            Func: Fn(&str, &[u8]) -> bool
+            Func: FnMut(&str, &[u8]) -> bool
     {
         let mut current_offset = base_offset;
 
