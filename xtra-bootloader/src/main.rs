@@ -2,8 +2,9 @@
 // Bootloader for XTRA-OS
 //
 // This bootloader is designed to run on RISC-V systems, it initializes the UART for logging,
-// validates the Device Tree Blob (DTB), and prepares the system to load and run a kernel image. The
-// Rust code is designed to run in a minimal environment without the Rust standard library or a
+// validates the Device Tree Blob (DTB), and prepares the system to load and run a kernel image.
+//
+// The Rust code is designed to run in a minimal environment without the Rust standard library or a
 // working heap. So no memory allocation is available, except for the stack which is set up by the
 // linker script and startup code in _start().
 //
@@ -17,6 +18,18 @@
 //     * Initializing the UART for logging.
 //     * Validating the Device Tree Blob (DTB).
 //     * Finding and loading a kernel image from a block device, (on a fat32 partition).
+//
+// So to summarize, the key assumptions of this bootloader are:
+//
+//  - Runs as the first code after firmware (no other OS/bootloader runs before us).
+//  - UART MMIO base address is known/fixed (see UART_0_BASE), but future versions may parse this
+//    from the DTB.
+//  - Only the stack is available for runtime allocations (no heap.)
+//  - Device Tree Blob (DTB) is passed in as an argument from the host/firmware.
+//  - Block device assumed to be VirtIO-MMIO, FAT32, QEMU default, but will generalize in the
+//    future.
+//  - Kernel image is an ELF file called "kernel.elf" stored in the root of a fat32 partition.
+//  - Bootloader region may be overwritten after handoff to the kernel.
 
 
 
@@ -65,6 +78,10 @@ pub unsafe extern "C" fn _start()
 }
 
 
+// This is a fairly simple panic handler that will be called if a panic occurs in the bootloader.
+// We can't currently print out the reason for the panic because the formatting code requires a
+// working heap, which we don't have in the bootloader. So we will just print the location of the
+// panic, if available, and then power off the system.
 #[panic_handler]
 fn kernel_panic_handler(info: &PanicInfo) -> !
 {
@@ -90,6 +107,11 @@ fn kernel_panic_handler(info: &PanicInfo) -> !
 }
 
 
+// Write our startup banner to the UART. This will include a welcome message, the hart ID, and the
+// address of the Device Tree Blob (DTB) pointer.
+//
+// This is mostly for diagnostic purposes, so that we can see which hart is running the bootloader
+// and the address of the DTB that was passed to it.
 fn write_startup_banner(uart: &uart::Uart, hart_id: usize, device_tree_ptr: *const u8)
 {
     // Write the welcome message.
@@ -107,6 +129,10 @@ fn write_startup_banner(uart: &uart::Uart, hart_id: usize, device_tree_ptr: *con
 }
 
 
+// Validate the Device Tree Blob (DTB) by checking its magic number. The magic number is a unique
+// identifier that indicates the start of a valid DTB.
+//
+// If we don't find a proper device tree we will print an error message and shut down the system.
 fn validate_device_tree(uart: &uart::Uart, device_tree_ptr: *const u8)
 {
     // Validate the Device Tree Blob (DTB) by checking its magic number.
@@ -122,6 +148,23 @@ fn validate_device_tree(uart: &uart::Uart, device_tree_ptr: *const u8)
 }
 
 
+// The actual Rust level entry point for the bootloader. This function is called indirectly by the
+// host environment to manage the boot process.
+//
+// Here we initialize the UART 0 for logging, validate the Device Tree Blob (DTB), and print out
+// the information we find in the DTB for diagnostics.
+//
+// Then we continue on with the boot process, which will involve finding a bootable block device,
+// with a fat32 partition with a kernel.elf file on it. We will then read the kernel image,
+// validate it, and load it into memory. Finally we will jump to the kernel's entry point, passing
+// the hart ID and DTB pointer as arguments.
+//
+// It is expected that this function wi9ll never return, but also that it will never be returned to
+// by the kernel. It is the job of the kernel to take over control of the system and manage the
+// hardware from that point on.
+//
+// In fact it is expected that this bootloader code will be overwritten later by normal OS
+// operation.
 #[no_mangle]
 pub extern "C" fn main(hart_id: usize, device_tree_ptr: *const u8) -> !
 {

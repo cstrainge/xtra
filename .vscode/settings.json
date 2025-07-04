@@ -13,6 +13,7 @@
         "mcopy",
         "mklabel",
         "mkpart",
+        "MMIO",
         "msdos",
         "nographic",
         "noreturn",
