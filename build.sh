@@ -19,6 +19,7 @@ cp target/riscv64imac-unknown-none-elf/release/xtra-kernel build/boot/kernel.elf
 # ---- Setup the user space directories. -----------------------------------------------------------
 
 mkdir -p build/sys-root/bin
+mkdir -p build/sys-root/boot
 mkdir -p build/sys-root/home
 mkdir -p build/sys-root/dev
 mkdir -p build/sys-root/lib
