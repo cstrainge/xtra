@@ -1,4 +1,25 @@
 
+// Bootloader for XTRA-OS
+//
+// This bootloader is designed to run on RISC-V systems, it initializes the UART for logging,
+// validates the Device Tree Blob (DTB), and prepares the system to load and run a kernel image. The
+// Rust code is designed to run in a minimal environment without the Rust standard library or a
+// working heap. So no memory allocation is available, except for the stack which is set up by the
+// linker script and startup code in _start().
+//
+// Right now it is designed to run on QEMU, in the future it may be extended to run on real RISC-V
+// hardware. In order to support this we need to get the UART and reset device information from the
+// Device Tree Blob (DTB) that is passed to the bootloader by the host environment.
+//
+// Currently we've baked in assumptions about this hardware.
+//
+// This bootloader is the first code that runs on the system, it is responsible for:
+//     * Initializing the UART for logging.
+//     * Validating the Device Tree Blob (DTB).
+//     * Finding and loading a kernel image from a block device, (on a fat32 partition).
+
+
+
 #![no_std]
 #![no_main]
 #![allow(unused)]
