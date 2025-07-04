@@ -96,10 +96,13 @@ impl Uart
         }
     }
 
-    pub fn put_hex(&self, n: usize)
+    pub fn put_hex(&self, n: usize, prefix: bool)
     {
-        self.put_char(b'0');
-        self.put_char(b'x');
+        if prefix
+        {
+            self.put_char(b'0');
+            self.put_char(b'x');
+        }
 
         if n == 0
         {
@@ -123,6 +126,34 @@ impl Uart
         for j in (0..i).rev()
         {
             self.put_char(digits[j]);
+        }
+    }
+
+    // Print a byte array as hex values, separated by spaces.
+    pub fn put_hex_bytes(&self, bytes: &[u8], max_bytes: Option<usize>)
+    {
+        for (i, &byte) in bytes.iter().enumerate()
+        {
+            if byte < 0x10
+            {
+                // Pad single hex digits with a leading zero.
+                self.put_char(b'0');
+            }
+
+            self.put_hex(byte as usize, false);
+
+            if    let Some(max_bytes) = max_bytes
+               && i + 1 >= max_bytes
+               && i + 1 < bytes.len()
+            {
+                self.put_str("...");
+                break;
+            }
+
+            if i < bytes.len() - 1
+            {
+                self.put_char(b' ');
+            }
         }
     }
 

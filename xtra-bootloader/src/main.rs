@@ -2,6 +2,8 @@
 #![no_std]
 #![no_main]
 #![allow(unused)]
+#![feature(let_chains)]
+
 
 
 mod uart;
@@ -11,6 +13,7 @@ mod ram;
 mod block_device;
 mod fat32;
 mod elf;
+
 
 
 use core::{ arch::naked_asm, panic::PanicInfo };
@@ -78,7 +81,7 @@ fn write_startup_banner(uart: &uart::Uart, hart_id: usize, device_tree_ptr: *con
 
     // Write the address of the Device Tree Blob (DTB) pointer.
     uart.put_str("Device Tree Blob (DTB) address: ");
-    uart.put_hex(device_tree_ptr as usize);
+    uart.put_hex(device_tree_ptr as usize, true);
     uart.put_str("\n");
 }
 
