@@ -1,4 +1,9 @@
 
+// Implementation of the Device Tree Blob (DTB) structure and methods to read and iterate through
+// the device tree structure and properties.
+//
+// It's up the calling code to interpret the device tree blocks and their properties.
+
 use core::{ mem::offset_of, ptr, slice::from_raw_parts, str::from_utf8_unchecked };
 
 use crate::uart::Uart;
@@ -21,19 +26,25 @@ pub fn validate_dtb(device_tree_ptr: *const u8) -> bool
 }
 
 
+// The DeviceTree structure represents the device tree blob (DTB) header and provides methods to
+// read and iterate through the device tree structure and properties.
+//
+// Because we are running in a heapless we manage the device tree structure in place and do not
+// allocate any memory for it. The device tree is expected to receive a pointer to the start of the
+// device tree blob (DTB) in memory.
 pub struct DeviceTree
 {
-    dtb_base: *const u8,          // Pointer to the start of the device tree blob.
+    dtb_base: *const u8,      // Pointer to the start of the device tree blob.
 
-    pub total_size: u32,          // Total size of DTB in bytes.
-    pub off_dt_struct: u32,       // Offset to structure block.
-    pub off_dt_strings: u32,      // Offset to strings block.
-    pub off_mem_res_map: u32,     // Offset to memory reservation block.
-    pub version: u32,             // DTB version (typically 17).
-    pub last_comp_version: u32,   // Last compatible version (17).
-    pub boot_cpu_id_phys: u32,    // Physical ID of boot CPU.
-    pub size_dt_strings: u32,     // Length of strings block.
-    pub size_dt_struct: u32,      // Length of structure block.
+    total_size: u32,          // Total size of DTB in bytes.
+    off_dt_struct: u32,       // Offset to structure block.
+    off_dt_strings: u32,      // Offset to strings block.
+    off_mem_res_map: u32,     // Offset to memory reservation block.
+    version: u32,             // DTB version (typically 17).
+    last_comp_version: u32,   // Last compatible version (17).
+    boot_cpu_id_phys: u32,    // Physical ID of boot CPU.
+    size_dt_strings: u32,     // Length of strings block.
+    size_dt_struct: u32,      // Length of structure block.
 }
 
 
@@ -113,7 +124,19 @@ impl DeviceTree
                         uart.put_str("      Property: ");
                         uart.put_str(prop_name);
                         uart.put_str(", value: ");
-                        uart.put_hex_bytes(prop_value, Some(4));
+
+                        if prop_value.is_empty()
+                        {
+                            uart.put_str("N/A");
+                        }
+                        else
+                        {
+                            uart.put_char(b'[');
+                            uart.put_int(prop_value.len());
+                            uart.put_str("] = ");
+                            uart.put_hex_bytes(prop_value, Some(4));
+                        }
+
                         uart.put_str("\n");
 
                         true
@@ -143,6 +166,11 @@ impl DeviceTree
     }
 
 
+    // Iterate through the device tree structure block, calling the callback for each found node.
+    //
+    // The callback receives the name of the node and the current byte offset in the structure
+    // block. The callback can then use that offset to iterate through the properties of the node,
+    // (if any.)
     pub fn iterate_blocks<Func>(&self, callback: Func)
         where
             Func: Fn(usize, &str) -> bool

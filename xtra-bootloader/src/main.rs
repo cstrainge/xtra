@@ -72,7 +72,7 @@ fn kernel_panic_handler(info: &PanicInfo) -> !
 fn write_startup_banner(uart: &uart::Uart, hart_id: usize, device_tree_ptr: *const u8)
 {
     // Write the welcome message.
-    uart.put_str("XTRA-OS Bootloader Starting...\n");
+    uart.put_str("\n\nXTRA-OS Bootloader Starting...\n");
 
     // Let the user know which hart (hardware thread) is running this code.
     uart.put_str("Running on hart ID: ");
