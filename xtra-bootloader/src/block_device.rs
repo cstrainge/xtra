@@ -2,7 +2,7 @@
 use core::{ mem::size_of, ptr::{ read_volatile, write_volatile }, str, time };
 
 use crate::{ device_tree::DeviceTree,
-             partition_table::{ MasterBootRecord, Partition },
+             partition_table::{ MasterBootRecord, LegacyPartition },
              uart::Uart,
              virtio::VirtIoBlockDevice };
 
@@ -189,7 +189,7 @@ impl BlockDevice
     // partition it finds.
     //
     // If no fat32 partitions are found, it returns None.
-    pub fn find_bootable_partition(&self, uart: &Uart) -> Option<Partition>
+    pub fn find_bootable_partition(&self, uart: &Uart) -> Option<LegacyPartition>
     {
         let mut buffer = [0u8; SECTOR_SIZE];
 
@@ -212,24 +212,26 @@ impl BlockDevice
 
         let mbr = MasterBootRecord::new(&buffer);
 
-            if mbr.is_valid() == false
-            {
-                uart.put_str("Invalid MBR found on block device.\n");
-                return None;
-            }
-            else
-            {
-                uart.put_str("Valid MBR found on block device.\n");
-            }
+        if mbr.is_valid() == false
+        {
+            uart.put_str("Invalid MBR found on block device.\n");
+            return None;
+        }
+        else
+        {
+            uart.put_str("Valid MBR found on block device.\n");
+        }
 
-//            for partition in mbr.partition_entries.iter()
-//            {
-//                // Check if the partition is bootable and has a valid type.
-//                if partition.status == 0x80 && partition.partition_type == 0x0B
-//                {
-//                    return Some(*partition);
-//                }
-//            }
+        for partition in mbr.partitions()
+        {
+            // Check if the partition is bootable and has a valid type.
+            if partition.is_bootable()
+            {
+                uart.put_str("Found bootable partition.\n");
+                return Some(*partition);
+            }
+        }
+
         None
     }
 
