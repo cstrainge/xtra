@@ -43,7 +43,9 @@
 mod uart;
 mod power;
 mod device_tree;
+mod virtio;
 mod block_device;
+mod partition_table;
 mod fat32;
 mod ram;
 mod elf;
@@ -195,7 +197,7 @@ pub extern "C" fn main(hart_id: usize, device_tree_ptr: *const u8) -> !
     device_tree.print_tree(&uart);
 
     // Find the first bootable block device.
-    let block_device = BlockDevice::find_first_drive(device_tree);
+    let block_device = BlockDevice::find_first_drive(&uart, device_tree);
 
     if block_device.is_none()
     {
@@ -206,11 +208,11 @@ pub extern "C" fn main(hart_id: usize, device_tree_ptr: *const u8) -> !
     }
 
     // Take the boot device find a bootable partition.
-    let block_device = block_device.unwrap();
+    let mut block_device = block_device.unwrap();
 
-    block_device.initialize();
+    block_device.initialize(&uart);
 
-    let partition = block_device.find_bootable_partition();
+    let partition = block_device.find_bootable_partition(&uart);
 
     if partition.is_none()
     {

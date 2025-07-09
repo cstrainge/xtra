@@ -59,9 +59,10 @@ qemu-system-riscv64 \
     -machine virt \
     -bios none \
     -kernel build/xtra-bootloader \
-    -drive file=build/disk0.img,format=raw,id=hd0 \
-    -device virtio-blk-device,drive=hd0 \
+    -global virtio-mmio.force-legacy=false \
+    -drive file=build/disk0.img,if=none,format=raw,id=x0 \
+    -device virtio-blk-device,drive=x0,bus=virtio-mmio-bus.0 \
     -serial stdio \
     -display sdl \
-    -smp 2 \
+    -smp 1 \
     -m 2048M

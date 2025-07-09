@@ -23,8 +23,10 @@
         "rodata",
         "rustc",
         "rustflags",
+        "Staticly",
         "Tlink",
         "virtio",
+        "VIRTQ",
         "xtask",
         "XTRA"
     ]
