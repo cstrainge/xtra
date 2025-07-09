@@ -631,6 +631,8 @@ static mut READ_STATUS: u8 = 0xff;
 
 
 
+// Make sure that the device visible data structures are the correct size and alignment as per the
+// VirtIO specification.
 const _: () =
     {
         assert!(size_of::<Descriptor>()            == 16);
@@ -649,19 +651,6 @@ const _: () =
         assert!(align_of::<AlignedAvailableRing>() == 4096);
         assert!(align_of::<AlignedUsedRing>()      == 4096);
     };
-
-
-
-pub fn is_block_device(base_address: usize) -> bool
-{
-    let mmio = MmioDevice::new(base_address);
-
-    // Check to make sure that the magic number is correct, the version is supported, and that
-    // the device ID is for a block device.
-       mmio.magic() == VIRTIO_MMIO_MAGIC
-    && matches!(mmio.version(), 1 | 2)
-    && mmio.device_id() == VIRTIO_BLOCK_DEVICE_ID
-}
 
 
 
@@ -688,7 +677,10 @@ impl VirtIoBlockDevice
         let uart = crate::uart::Uart::new(0x1000_0000);
 
         // Make sure that this is a valid VirtIO block device.
-        self.validate_self()?;
+        if !self.is_block_device()
+        {
+            return Err("Not a valid VirtIO block device.");
+        }
 
         // Reset the device.
         self.mmio.set_status(0);
@@ -888,28 +880,11 @@ impl VirtIoBlockDevice
         }
     }
 
+    // Validate that the device is a valid VirtIO block device.
     pub fn is_block_device(&self) -> bool
     {
-        self.mmio.device_id() == VIRTIO_BLOCK_DEVICE_ID
-    }
-
-    fn validate_self(&self) -> IoResult<()>
-    {
-        if self.mmio.magic() != VIRTIO_MMIO_MAGIC
-        {
-            return Err("Invalid VirtIO MMIO magic number.");
-        }
-
-        if !matches!(self.mmio.version(), 1 | 2)
-        {
-            return Err("Unsupported VirtIO version.");
-        }
-
-        if self.mmio.device_id() != VIRTIO_BLOCK_DEVICE_ID
-        {
-            return Err("Not a VirtIO block device.");
-        }
-
-        Ok(())
+           self.mmio.magic() == VIRTIO_MMIO_MAGIC
+        && matches!(self.mmio.version(), 1 | 2)
+        && self.mmio.device_id() == VIRTIO_BLOCK_DEVICE_ID
     }
 }
