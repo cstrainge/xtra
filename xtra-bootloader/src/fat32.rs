@@ -864,7 +864,7 @@ impl<'a> DirectoryIterator<'a>
 
         loop
         {
-            // Load the next directory entry from the file stream.
+            // Try to load the next directory entry from the file stream.
             let entry = DirectoryEntry::new(&mut self.file_stream)?;
 
             // Check if we have reached the end of the directory entries.
