@@ -153,6 +153,21 @@ struct Fat
 
 
 
+// Constants for the FAT32 file allocation table entries. These constants are used to identify
+// special entries in the FAT table such as end-of-chain markers and bad clusters.
+const FAT_CLUSTER_MASK:      u32 = 0x0FFF_FFFF;  // Mask to extract the valid cluster number from a
+                                                 //   FAT entry.
+const FAT_CLUSTER_EOC:       u32 = 0x0FFF_FFFF;  // End of chain marker for a cluster chain.
+const FAT_CLUSTER_EOC_START: u32 = 0x0FFF_FFF8;  // Start of the end of chain markers in the FAT
+                                                 //   table.
+const FAT_CLUSTER_BAD:       u32 = 0x0FFF_FFF7;  // Bad cluster marker in the FAT table. This
+                                                 // indicates that the cluster is not usable.
+const FAT_CLUSTER_FREE:      u32 = 0x0000_0000;  // Free cluster marker in the FAT table. This
+                                                 // indicates that the cluster is not allocated to
+                                                 // any file or directory.
+
+
+
 const MAX_FAT_ENTRIES: usize = 65536; // Maximum number of FAT entries we can handle in our buffer.
 
 
@@ -233,21 +248,21 @@ impl Fat
     // None is also returned if the cluster is invalid.
     pub fn get_next_cluster(&self, cluster: usize) -> Option<usize>
     {
-        let cluster = cluster & 0x0FFF_FFFF;
+        let cluster = cluster & FAT_CLUSTER_MASK;
 
         if cluster >= self.entries.len()
         {
             return None;
         }
 
-        let entry = (self.entries[cluster] & 0x0FFF_FFFF) as usize;
+        let entry = (self.entries[cluster] & FAT_CLUSTER_MASK) as usize;
 
         match entry
         {
-            0x0FFF_FFF8..=0x0FFF_FFFF => None,        // End of chain markers.
-            0x0FFFFFF7                => None,        // Reserved cluster.
-            0                         => None,        // Free cluster.
-            _                         => Some(entry)  // Valid cluster.
+            FAT_CLUSTER_EOC_START..=FAT_CLUSTER_EOC => None,        // End of chain markers.
+            FAT_CLUSTER_BAD                         => None,        // Reserved cluster.
+            FAT_CLUSTER_FREE                        => None,        // Free cluster.
+            _                                       => Some(entry)  // Valid cluster.
         }
     }
 
