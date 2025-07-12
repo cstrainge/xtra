@@ -28,7 +28,7 @@ pub enum PartitionStatus
 
 
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, PartialEq, Eq)]
 pub enum PartitionType
 {
     Empty,
@@ -105,6 +105,11 @@ impl LegacyPartition
     {
            matches!(self.status, PartitionStatus::Bootable)
         && matches!(self.partition_type, PartitionType::Fat32)
+    }
+
+    pub fn is_fat(&self) -> bool
+    {
+        self.partition_type == PartitionType::Fat32
     }
 }
 

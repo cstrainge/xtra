@@ -157,6 +157,115 @@ impl Uart
         }
     }
 
+    pub fn put_hex_byte(&self, byte: u8)
+    {
+        // See if we need to pad the byte with a leading zero.
+        if byte < 0x10
+        {
+            // Pad single hex digits with a leading zero.
+            self.put_char(b'0');
+        }
+
+        // Print the byte as hex.
+        self.put_hex(byte as usize, false);
+    }
+
+    pub fn put_hex_address(&self, address: usize)
+    {
+        // Pad the address with leading zeros to match the specified byte size.
+        let hex_length = 8;
+        let mut hex_chars = [b'0'; 8];
+
+        for i in (0..hex_length).rev()
+        {
+            let shift = (hex_length - 1 - i) * 4;
+            let digit = ((address >> shift) & 0xF) as u8;
+            let hex_char = if digit < 10 { digit + b'0' } else { digit - 10 + b'a' };
+
+            hex_chars[i] = hex_char;
+        }
+
+        // Print the hex address with leading zeros.
+        for i in 0..hex_length
+        {
+            self.put_char(hex_chars[i]);
+        }
+    }
+
+    pub fn put_hex_dump(&self, bytes: &[u8])
+    {
+        self.put_str("          ");
+        self.put_str("00 01 02 03 04 05 06 07  08 09 0a 0b 0c 0d 0e 0f  | 01234567 89abcdef |\n");
+
+        for (chunk_index, chunk) in bytes.chunks(16).enumerate()
+        {
+            let offset = chunk_index * 16;
+
+            self.put_hex_address(offset);
+            self.put_str("  ");
+
+            for index in 0..16
+            {
+                if index == 8
+                {
+                    // Add a space after the 8th byte for formatting.
+                    self.put_char(b' ');
+                }
+
+                if index < chunk.len()
+                {
+                    // Print the byte as hex.
+                    self.put_hex_byte(chunk[index]);
+                    self.put_char(b' ');
+                }
+                else
+                {
+                    // Print a space for missing bytes.
+                    self.put_char(b' ');
+                    self.put_char(b' ');
+                }
+            }
+
+            self.put_str(" | ");
+
+            for (index, &byte) in chunk.iter().enumerate()
+            {
+                if index == 8
+                {
+                    // Add a space after the 8th byte for formatting.
+                    self.put_char(b' ');
+                }
+
+                if    byte.is_ascii_alphanumeric()
+                   || byte.is_ascii_punctuation()
+                   || byte == b' '
+                {
+                    // Print the byte as a character if it's printable.
+                    self.put_char(byte);
+                }
+                else
+                {
+                    // Print a dot for non-printable characters.
+                    self.put_char(b'.');
+                }
+            }
+
+            for index in chunk.len()..16
+            {
+                if index == 8
+                {
+                    // Add a space after the 8th byte for formatting.
+                    self.put_char(b' ');
+                }
+
+                // Print a dot for missing bytes.
+                self.put_char(b'.');
+            }
+
+            self.put_str(" |\n");
+        }
+    }
+
     fn set_lcr(&self, lcr: u8)
     {
         unsafe

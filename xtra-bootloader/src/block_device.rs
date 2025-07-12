@@ -29,7 +29,7 @@ impl Registers
 
 
 
-const SECTOR_SIZE: usize = 512;        // Standard sector size for block devices.
+pub const SECTOR_SIZE: usize = 512;        // Standard sector size for block devices.
 
 
 
@@ -179,7 +179,9 @@ impl BlockDevice
     }
 
     // Perform a polling read from the block device. We'll read a single 512 byte sector.
-    pub fn read_sector(&mut self, sector: u64, buffer: &mut [u8; SECTOR_SIZE]) -> Result<(), &'static str>
+    pub fn read_sector(&self,
+                       sector: u64,
+                       buffer: &mut [u8; SECTOR_SIZE]) -> Result<(), &'static str>
     {
         self.virt_device.read_sector(sector, buffer)
     }

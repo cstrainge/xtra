@@ -59,6 +59,8 @@ use power::{ power_off, wait_for_interrupt };
 use device_tree::{ DeviceTree, validate_dtb };
 use block_device::BlockDevice;
 
+use crate::{fat32::{DirectoryEntry, DirectoryIterator, Fat32Volume}, virtio::SECTOR_SIZE};
+
 
 
 // This is the raw starting point of the bootloader, it is called directly by the host environment,
@@ -224,10 +226,89 @@ pub extern "C" fn main(hart_id: usize, device_tree_ptr: *const u8) -> !
 
     let partition = partition.unwrap();
 
-    // Read the partition table and find the kernel image. We will then:
-    //     * Validate the kernel image.
-    //     * Read it's memory requirements.
-    //     * Find it's entry point.
+    uart.put_str("Partition information:\n");
+    uart.put_str("  Is FAT:          ");
+    uart.put_str(if partition.is_fat() { "Yes" } else { "No" });
+    uart.put_str("\n");
+    uart.put_str("  Is bootable:     ");
+    uart.put_str(if partition.is_bootable() { "Yes" } else { "No" });
+    uart.put_str("\n");
+    uart.put_str("  Start LBA:       ");
+    uart.put_int(partition.start_lba as usize);
+    uart.put_str("\n");
+    uart.put_str("  Size in sectors: ");
+    uart.put_int(partition.size_in_sectors as usize);
+    uart.put_str(", ");
+    uart.put_int(partition.size_in_sectors as usize * SECTOR_SIZE);
+    uart.put_str(" bytes.\n");
+    uart.put_str("\n");
+    uart.put_str("Reading FAT32 partition...\n");
+
+    // Initialize the fat32 volume for reading.
+    let fat32_volume = Fat32Volume::new(&block_device, &partition);
+
+    if let Err(e) = fat32_volume
+    {
+        uart.put_str("Failed to initialize FAT32 volume.\n");
+        uart.put_str("Error: ");
+        uart.put_str(e);
+        uart.put_str("\n");
+
+        power_off();
+    }
+
+    // Now that we have a valid FAT32 volume, we can create a directory iterator for the root
+    // directory of the volume.
+    let fat32_volume = fat32_volume.unwrap();
+    let directory_iterator = DirectoryIterator::new(&fat32_volume, fat32_volume.root_cluster);
+
+    // Was the directory iterator initialized successfully?
+    if let Err(e) = directory_iterator
+    {
+        uart.put_str("Failed to initialize directory iterator.\n");
+        uart.put_str("Error: ");
+        uart.put_str(e);
+        uart.put_str("\n");
+
+        power_off();
+    }
+
+    let mut directory_iterator = directory_iterator.unwrap();
+
+    // Iterate over the entries in the root directory, looking for a file called "kernel.elf".
+    uart.put_str("Searching for kernel image in root directory...\n");
+
+    let mut kernel_entry = DirectoryEntry::zeroed();
+
+    let result = directory_iterator.iterate(|entry|
+        {
+            if    entry.is_file()
+               && entry.name == *b"KERNEL  ELF"
+            {
+                uart.put_str("Found OS kernel, the file is ");
+                uart.put_int(entry.file_size as usize);
+                uart.put_str(" bytes.\n");
+
+                // We found the kernel image, so we will return it.
+                kernel_entry = entry.clone();
+
+                false
+            }
+            else
+            {
+                true
+            }
+        });
+
+    if let Err(e) = result
+    {
+        uart.put_str("Failed to iterate over root directory.\n");
+        uart.put_str("Error: ");
+        uart.put_str(e);
+        uart.put_str("\n");
+
+        power_off();
+    }
 
     // Get information about the system RAM and compute a loading address for the kernel.
     // Compute the kernel's final entry point address.
