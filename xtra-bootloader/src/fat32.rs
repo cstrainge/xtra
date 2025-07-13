@@ -155,16 +155,16 @@ struct Fat
 
 // Constants for the FAT32 file allocation table entries. These constants are used to identify
 // special entries in the FAT table such as end-of-chain markers and bad clusters.
-const FAT_CLUSTER_MASK:      u32 = 0x0FFF_FFFF;  // Mask to extract the valid cluster number from a
-                                                 //   FAT entry.
-const FAT_CLUSTER_EOC:       u32 = 0x0FFF_FFFF;  // End of chain marker for a cluster chain.
-const FAT_CLUSTER_EOC_START: u32 = 0x0FFF_FFF8;  // Start of the end of chain markers in the FAT
-                                                 //   table.
-const FAT_CLUSTER_BAD:       u32 = 0x0FFF_FFF7;  // Bad cluster marker in the FAT table. This
-                                                 // indicates that the cluster is not usable.
-const FAT_CLUSTER_FREE:      u32 = 0x0000_0000;  // Free cluster marker in the FAT table. This
-                                                 // indicates that the cluster is not allocated to
-                                                 // any file or directory.
+const FAT_CLUSTER_MASK:      usize = 0x0FFF_FFFF;  // Mask to extract the valid cluster number from
+                                                   //   a FAT entry.
+const FAT_CLUSTER_EOC:       usize = 0x0FFF_FFFF;  // End of chain marker for a cluster chain.
+const FAT_CLUSTER_EOC_START: usize = 0x0FFF_FFF8;  // Start of the end of chain markers in the FAT
+                                                   //   table.
+const FAT_CLUSTER_BAD:       usize = 0x0FFF_FFF7;  // Bad cluster marker in the FAT table. This
+                                                   // indicates that the cluster is not usable.
+const FAT_CLUSTER_FREE:      usize = 0x0000_0000;  // Free cluster marker in the FAT table. This
+                                                   // indicates that the cluster is not allocated to
+                                                   // any file or directory.
 
 
 
@@ -255,7 +255,7 @@ impl Fat
             return None;
         }
 
-        let entry = (self.entries[cluster] & FAT_CLUSTER_MASK) as usize;
+        let entry = self.entries[cluster] as usize & FAT_CLUSTER_MASK;
 
         match entry
         {
