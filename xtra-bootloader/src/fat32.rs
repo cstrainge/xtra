@@ -464,6 +464,7 @@ impl<'a> FileStream<'a>
     // filesystem.
     //
     // Given a FAT32 volume, the starting cluster of the file, and the size of the file in bytes,
+    // create a stream that can read through the bytes of the file.
     pub fn new(fat_volume: &'a Fat32Volume<'a>,
                start_cluster: usize,
                size: usize) -> FatResult<Self>
@@ -493,6 +494,17 @@ impl<'a> FileStream<'a>
         }
 
         Ok(fs)
+    }
+
+    // Create a new file stream from a directory entry from the FAT32 filesystem.
+    pub fn new_from_directory_entry(fat_volume: &'a Fat32Volume<'a>,
+                                    directory_entry: &DirectoryEntry) -> Result<Self, &'static str>
+    {
+        let start_cluster =     directory_entry.first_cluster_low as usize
+                            | ((directory_entry.first_cluster_high as usize) << 16);
+        let size = directory_entry.file_size as usize;
+
+        Self::new(fat_volume, start_cluster, size)
     }
 
     // Move the file cursor back to the beginning of the file.
@@ -609,6 +621,38 @@ impl<'a> FileStream<'a>
         }
 
         // We've successfully read the entire buffer.
+        Ok(())
+    }
+
+    pub fn tell(&self) -> usize
+    {
+        // Return the absolute byte offset into the file.
+        self.absolute_byte
+    }
+
+    pub fn seek(&mut self, offset: usize) -> FatResult<()>
+    {
+        // TODO: Replace this with a more efficient seek implementation that does not require
+        // actually reading the file byte by byte.
+
+        // Check if the offset is within the bounds of the file.
+        if offset >= self.size
+        {
+            return Err("Seek offset is out of bounds.");
+        }
+
+        self.reset()?;
+
+        for _ in 0..offset
+        {
+            // Read the next byte from the file stream.
+            if self.next_byte()?.is_none()
+            {
+                // We have reached the end of the file before reaching the offset.
+                return Err("Seek beyond end of file.");
+            }
+        }
+
         Ok(())
     }
 

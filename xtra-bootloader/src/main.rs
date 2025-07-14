@@ -33,6 +33,13 @@
 
 
 
+// Crate configuration for the bootloader. We're not using the standard library or a heap so we need
+// to disable some features that require them. We also enable the `let_chains` feature to allow
+// their use in our code.
+//
+// Also because we are running in a bare metal environment we need to make sure that our special
+// _start function is executed first so that it gets the chance to setup the stack pointer proper
+// Rust code requires.
 #![no_std]
 #![no_main]
 #![allow(unused)]
@@ -40,6 +47,8 @@
 
 
 
+// All of our sub-modules holding the various low-level hardware drivers and file format
+// functionality.
 mod uart;
 mod power;
 mod device_tree;
@@ -52,14 +61,29 @@ mod elf;
 
 
 
+// We import from the core library instead of the standard library, because we are running in a bare
+// metal environment without a heap or standard library support.
 use core::{ arch::naked_asm, panic::PanicInfo };
 
-use uart::{ Uart, UART_0_BASE };
-use power::{ power_off, wait_for_interrupt };
-use device_tree::{ DeviceTree, validate_dtb };
-use block_device::BlockDevice;
+// Import the important symbols from our sub-modules.
+use crate::{ block_device::BlockDevice,
+             device_tree::{ DeviceTree, validate_dtb },
+             elf::execute_kernel,
+             fat32::{ DirectoryEntry, DirectoryIterator, Fat32Volume, FileStream },
+             power::{ power_off, wait_for_interrupt },
+             uart::{ Uart, UART_0_BASE },
+             virtio::SECTOR_SIZE};
 
-use crate::{fat32::{DirectoryEntry, DirectoryIterator, Fat32Volume}, virtio::SECTOR_SIZE};
+
+
+const KERNEL_FILE_NAME: &[u8; 11] = b"KERNEL  ELF"; // The name of the kernel file as will be
+                                                    // found in the root directory of the FAT32
+                                                    // partition.
+
+// Hardcode the address we will load the kernel image to in memory. In the future we may want to
+// make this dynamic.
+const KERNEL_LOAD_ADDRESS: usize = 0x8050_0000;   // We are using 5MB after the position where the
+                                                  // bootloader was loaded.
 
 
 
@@ -67,6 +91,9 @@ use crate::{fat32::{DirectoryEntry, DirectoryIterator, Fat32Volume}, virtio::SEC
 // in this case, QEMU. We setup a reasonable stack pointer and then jump to the main function, we
 // expect main to never return as it is its job to find and load the actual kernel image and
 // transfer control to it.
+//
+// If any errors occur in the bootloader we will power off the system. So even in the case of a
+// panic, we will not return from the main function.
 #[unsafe(naked)]
 #[no_mangle]
 #[link_section = ".text._start"]
@@ -283,7 +310,7 @@ pub extern "C" fn main(hart_id: usize, device_tree_ptr: *const u8) -> !
     let result = directory_iterator.iterate(|entry|
         {
             if    entry.is_file()
-               && entry.name == *b"KERNEL  ELF"
+               && entry.name == *KERNEL_FILE_NAME
             {
                 uart.put_str("Found OS kernel, the file is ");
                 uart.put_int(entry.file_size as usize);
@@ -310,15 +337,52 @@ pub extern "C" fn main(hart_id: usize, device_tree_ptr: *const u8) -> !
         power_off();
     }
 
-    // Get information about the system RAM and compute a loading address for the kernel.
-    // Compute the kernel's final entry point address.
+    // We have a kernel! So attempt to create a file stream for loading the kernel image.
+    let kernel_stream = FileStream::new_from_directory_entry(&fat32_volume, &kernel_entry);
 
-    // Load the kernel image into memory.
+    if let Err(e) = kernel_stream
+    {
+        uart.put_str("Failed to create file stream for kernel image.\n");
+        uart.put_str("Error: ");
+        uart.put_str(e);
+        uart.put_str("\n");
 
-    // Jump to the kernel's entry point, passing the hart ID and DTB pointer as arguments.
+        power_off();
+    }
 
-    // If we get here something went wrong, so we will always just power off the system.
-    uart.put_str("\nExecution erroneously returned to the bootloader, powering off system...\n");
+    let mut kernel_stream = kernel_stream.unwrap();
 
+    // We have a file stream for the kernel image. We can now try to validate and execute the
+    // kernel. Once executed the kernel should never return to the bootloader. In fact it is
+    // expected that the bootloader code will be overwritten by the kernel's runtime data structures
+    // and application memory pages.
+    uart.put_str("Executing kernel image...\n");
+
+    let result = execute_kernel(&uart,
+                                KERNEL_LOAD_ADDRESS as *const u8,
+                                hart_id,
+                                device_tree_ptr,
+                                &mut kernel_stream);
+
+    // Ok, if we got here, something went wrong in trying to execute the kernel.
+    match result
+    {
+        Ok(()) =>
+            {
+                uart.put_str("Kernel executed successfully, but it should never return to the ");
+                uart.put_str("bootloader.\n");
+            },
+
+        Err(e) =>
+            {
+                uart.put_str("Failed to execute kernel image.\n");
+                uart.put_str("Error: ");
+                uart.put_str(e);
+                uart.put_str("\n");
+            }
+    }
+
+    // Finally shut off the machine.  Whatever happened will require user intervention to fix.
+    uart.put_str("Kernel execution failed, shutting down system...\n");
     power_off()
 }

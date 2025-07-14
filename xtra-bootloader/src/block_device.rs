@@ -163,7 +163,7 @@ impl BlockDevice
     // Initialize the block device for communication.
     pub fn initialize(&mut self, uart: &Uart)
     {
-        uart.put_str("Initializing block device...\n");
+        uart.put_str("\nInitializing block device...\n");
 
         let result = self.virt_device.initialize();
 

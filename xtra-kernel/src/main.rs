@@ -1,10 +1,23 @@
 
 #![no_std]
 #![no_main]
+#![feature(let_chains)]
 
 
 
 use core::{ arch::naked_asm, panic::PanicInfo };
+
+
+
+// Import the UART module for console output.  This is just a temporary implementation imported from
+// the bootloader. We will be building proper infrastructure for this in the future.
+mod uart;
+
+
+
+// The OS banner to print at startup, this is a simple ASCII art banner that is printed to the
+// UART console when the bootloader starts.
+const OS_BANNER: &str = include_str!("../banner.txt");
 
 
 
@@ -31,6 +44,10 @@ pub unsafe extern "C" fn _start()
 #[panic_handler]
 fn kernel_panic_handler(_info: &PanicInfo) -> !
 {
+    let uart = uart::Uart::new(uart::UART_0_BASE);
+
+    uart.put_str("Kernel panic occurred.\n");
+
     loop {}
 }
 
@@ -38,5 +55,10 @@ fn kernel_panic_handler(_info: &PanicInfo) -> !
 #[no_mangle]
 pub extern "C" fn main(_hart_id: usize, _device_tree_ptr: *const u8) -> !
 {
+    let uart = uart::Uart::init_new(uart::UART_0_BASE);
+
+    // Print the OS banner to the UART console so that we know the kernel is alive.
+    uart.put_str(OS_BANNER);
+
     loop {}
 }
