@@ -1,23 +1,39 @@
 
+// The main entry point for the Xtra kernel. We perform all system initialization here and then
+// jump into the scheduler to start running tasks.
+
 #![no_std]
 #![no_main]
 #![feature(let_chains)]
 
 
 
+// extern crate alloc;
+
+
+// Bring in the kernel subsystems that implement the core functionality of the Xtra kernel.
+mod riscv;
+mod device_tree;
+mod uart;
+mod printing;
+mod filesystems;
+mod scheduler;
+
+
+
 use core::{ arch::naked_asm, panic::PanicInfo };
 
-
-
-// Import the UART module for console output.  This is just a temporary implementation imported from
-// the bootloader. We will be building proper infrastructure for this in the future.
-mod uart;
+use crate::{ device_tree::DeviceTree, printing::init_printing, scheduler::Scheduler };
 
 
 
 // The OS banner to print at startup, this is a simple ASCII art banner that is printed to the
 // UART console when the bootloader starts.
-const OS_BANNER: &str = include_str!("../banner.txt");
+const OS_BANNER_STR: &str = include_str!("../banner.txt");
+
+
+// A banner for the OS panic message when printed out the UART console.
+const OS_PANIC_STR: &str = include_str!("../panic.txt");
 
 
 
@@ -41,24 +57,37 @@ pub unsafe extern "C" fn _start()
 }
 
 
-#[panic_handler]
-fn kernel_panic_handler(_info: &PanicInfo) -> !
-{
-    let uart = uart::Uart::new(uart::UART_0_BASE);
 
-    uart.put_str("Kernel panic occurred.\n");
+// This is the panic handler for the kernel, it is called when a panic occurs in the kernel code.
+// We print the panic message to the UART console and then loop forever.
+//
+// TODO: Add a timeout and attempt to power off the system gracefully.
+#[panic_handler]
+fn kernel_panic_handler(info: &PanicInfo) -> !
+{
+    println!("{}", OS_PANIC_STR);
+    println!("Kernel panic: {}", info);
 
     loop {}
 }
 
 
 #[no_mangle]
-pub extern "C" fn main(_hart_id: usize, _device_tree_ptr: *const u8) -> !
+pub extern "C" fn main(_hart_id: usize, device_tree_ptr: *const u8) -> !
 {
-    let uart = uart::Uart::init_new(uart::UART_0_BASE);
+    // Initialize the device tree iterator from the pointer passed in by the host environment.
+    let device_tree = DeviceTree::new(device_tree_ptr);
 
-    // Print the OS banner to the UART console so that we know the kernel is alive.
-    uart.put_str(OS_BANNER);
+    // Init the logging system using the device tree to find the UART device. We use the system's
+    // first UART device for system logging. Any other UART devices will be used as consoles.
+    init_printing(&device_tree);
 
-    loop {}
+    // Print the OS banner to the UART console.
+    println!("{}", OS_BANNER_STR);
+
+    // Finally initialize the scheduler for this CPU core and start it running. The scheduler's run
+    // method will never return.
+    let scheduler = Scheduler::new();
+
+    scheduler.run();
 }

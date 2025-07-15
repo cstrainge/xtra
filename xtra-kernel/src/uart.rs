@@ -1,40 +1,53 @@
 
-use core::ptr::{ read_volatile, write_volatile };
+// Implementation of a simple VirtIO MMIO UART for logging output in a no_std environment. This
+// version doesn't support interrupts or reading from the UART, it is really just intended for
+// simple logging output from the kernel to an attached device.
+
+use core::{ fmt::{ self, Write }, hint::spin_loop, ptr::{ read_volatile, write_volatile } };
 
 
 
-pub const UART_0_BASE: usize = 0x1000_0000;
-
+// Indices of the UART MMIO registers.
 const UART_THR: usize = 0; // Transmit Holding Register.
-//const UART_RBR: usize = 0; // Receive Buffer Register  .
 const UART_IER: usize = 1; // Interrupt Enable Register.
 const UART_LCR: usize = 3; // Line Control Register.
 const UART_LSR: usize = 5; // Line Status Register.
 
 
 
-pub struct Uart
+// Implementation of a UART that doesn't use interrupts for communication. It also doesn't support
+// reading from the UART. This is intended for simple logging output from the Kernel to an attached
+// device.
+//
+// Or from a virtual machine to the host console like QEMU.
+pub struct SimpleUart
 {
     base: usize
 }
 
 
-impl Uart
+impl SimpleUart
 {
-    pub const fn new(base: usize) -> Uart
+    // Create a new UART device with the specified base address, but leave it uninitialized. This
+    // method is useful when needing to access an already initialized UART but you don't have a
+    // reference to the main UART instance.
+    pub const fn new(base: usize) -> SimpleUart
     {
-        Uart { base }
+        SimpleUart { base }
     }
 
-    pub fn init_new(base: usize) -> Uart
+    // Initialize the UART with the specified base address but also set it up for use.
+    pub fn init_new(base: usize) -> SimpleUart
     {
-        let uart = Uart::new(base);
+        let uart = SimpleUart::new(base);
 
         uart.init();
 
         uart
     }
 
+    /// Initializes the UART for use. This sets up the line control register and disables
+    /// interrupts.
     pub fn init(&self)
     {
         // Set the Line Control Register to 8 bits, no parity, 1 stop bit.
@@ -44,20 +57,40 @@ impl Uart
         self.set_ier(0b_0000_0000);
     }
 
+    /// Creates a new Uart instance with a base address of 0, that is non-functional.
+    pub const fn zeroed() -> SimpleUart
+    {
+        SimpleUart { base: 0 }
+    }
+
+    // Is the UART initialized?
+    pub fn is_initialized(&self) -> bool
+    {
+        // If the base address is 0, then the UART is not initialized.
+        self.base != 0
+    }
+
+    // Write a character to the UART's output buffer. If the buffer is full we will busy wait until
+    // it is ready to accept more data.
     pub fn put_char(&self, c: u8)
     {
         // Wait for the Transmit Holding Register to be empty.
         while (self.get_lsr() & 0b_0010_0000) == 0
         {
-            // Play the waiting game.
+            // Play the waiting game, but let the compiler know this is a busy wait.
+            spin_loop();
         }
 
         // Write the character to the Transmit Holding Register.
         self.set_thr(c);
     }
 
+    // Write a string to the UART's output buffer. This will convert newlines to carriage return +
+    // and new-line characters for better formatting on the console.
     pub fn put_str(&self, s: &str)
     {
+        // Simply iterate over the string and write each character to the UART filtering \n
+        // characters as we go.
         for c in s.bytes()
         {
             if c == b'\n'
@@ -66,206 +99,12 @@ impl Uart
                 self.put_char(b'\r');
             }
 
+            // Write the character to the UART.
             self.put_char(c);
         }
     }
 
-    pub fn put_int(&self, n: usize)
-    {
-        if n == 0
-        {
-            self.put_char(b'0');
-            return;
-        }
-
-        let mut num = n;
-        let mut digits = [0u8; 20];
-        let mut i = 0;
-
-        while num > 0
-        {
-            digits[i] = (num % 10) as u8 + b'0';
-            num /= 10;
-            i += 1;
-        }
-
-        // Print the digits in reverse order.
-        for j in (0..i).rev()
-        {
-            self.put_char(digits[j]);
-        }
-    }
-
-    pub fn put_hex(&self, n: usize, prefix: bool)
-    {
-        if prefix
-        {
-            self.put_char(b'0');
-            self.put_char(b'x');
-        }
-
-        if n == 0
-        {
-            self.put_char(b'0');
-            return;
-        }
-
-        let mut num = n;
-        let mut digits = [0u8; 16];
-        let mut i = 0;
-
-        while num > 0
-        {
-            let digit = (num & 0xF) as u8;
-            digits[i] = if digit < 10 { digit + b'0' } else { digit - 10 + b'a' };
-            num >>= 4;
-            i += 1;
-        }
-
-        // Print the digits in reverse order.
-        for j in (0..i).rev()
-        {
-            self.put_char(digits[j]);
-        }
-    }
-
-    // Print a byte array as hex values, separated by spaces.
-    pub fn put_hex_bytes(&self, bytes: &[u8], max_bytes: Option<usize>)
-    {
-        for (i, &byte) in bytes.iter().enumerate()
-        {
-            if byte < 0x10
-            {
-                // Pad single hex digits with a leading zero.
-                self.put_char(b'0');
-            }
-
-            self.put_hex(byte as usize, false);
-
-            if    let Some(max_bytes) = max_bytes
-               && i + 1 >= max_bytes
-               && i + 1 < bytes.len()
-            {
-                self.put_str("...");
-                break;
-            }
-
-            if i < bytes.len() - 1
-            {
-                self.put_char(b' ');
-            }
-        }
-    }
-
-    pub fn put_hex_byte(&self, byte: u8)
-    {
-        // See if we need to pad the byte with a leading zero.
-        if byte < 0x10
-        {
-            // Pad single hex digits with a leading zero.
-            self.put_char(b'0');
-        }
-
-        // Print the byte as hex.
-        self.put_hex(byte as usize, false);
-    }
-
-    pub fn put_hex_address(&self, address: usize)
-    {
-        // Pad the address with leading zeros to match the specified byte size.
-        let hex_length = 8;
-        let mut hex_chars = [b'0'; 8];
-
-        for i in (0..hex_length).rev()
-        {
-            let shift = (hex_length - 1 - i) * 4;
-            let digit = ((address >> shift) & 0xF) as u8;
-            let hex_char = if digit < 10 { digit + b'0' } else { digit - 10 + b'a' };
-
-            hex_chars[i] = hex_char;
-        }
-
-        // Print the hex address with leading zeros.
-        for i in 0..hex_length
-        {
-            self.put_char(hex_chars[i]);
-        }
-    }
-
-    pub fn put_hex_dump(&self, bytes: &[u8])
-    {
-        self.put_str("          ");
-        self.put_str("00 01 02 03 04 05 06 07  08 09 0a 0b 0c 0d 0e 0f  | 01234567 89abcdef |\n");
-
-        for (chunk_index, chunk) in bytes.chunks(16).enumerate()
-        {
-            let offset = chunk_index * 16;
-
-            self.put_hex_address(offset);
-            self.put_str("  ");
-
-            for index in 0..16
-            {
-                if index == 8
-                {
-                    // Add a space after the 8th byte for formatting.
-                    self.put_char(b' ');
-                }
-
-                if index < chunk.len()
-                {
-                    // Print the byte as hex.
-                    self.put_hex_byte(chunk[index]);
-                    self.put_char(b' ');
-                }
-                else
-                {
-                    // Print a space for missing bytes.
-                    self.put_char(b' ');
-                    self.put_char(b' ');
-                }
-            }
-
-            self.put_str(" | ");
-
-            for (index, &byte) in chunk.iter().enumerate()
-            {
-                if index == 8
-                {
-                    // Add a space after the 8th byte for formatting.
-                    self.put_char(b' ');
-                }
-
-                if    byte.is_ascii_alphanumeric()
-                   || byte.is_ascii_punctuation()
-                   || byte == b' '
-                {
-                    // Print the byte as a character if it's printable.
-                    self.put_char(byte);
-                }
-                else
-                {
-                    // Print a dot for non-printable characters.
-                    self.put_char(b'.');
-                }
-            }
-
-            for index in chunk.len()..16
-            {
-                if index == 8
-                {
-                    // Add a space after the 8th byte for formatting.
-                    self.put_char(b' ');
-                }
-
-                // Print a dot for missing bytes.
-                self.put_char(b'.');
-            }
-
-            self.put_str(" |\n");
-        }
-    }
-
+    // Write to the UART's Line Control Register (LCR).
     fn set_lcr(&self, lcr: u8)
     {
         unsafe
@@ -274,6 +113,7 @@ impl Uart
         }
     }
 
+    // Write to the UART's Interrupt Enable Register (IER) to disable or enable interrupts.
     fn set_ier(&self, ier: u8)
     {
         unsafe
@@ -282,6 +122,7 @@ impl Uart
         }
     }
 
+    // Read the Line Status Register (LSR) to check if the UART is ready to accept more data.
     fn get_lsr(&self) -> u8
     {
         unsafe
@@ -290,11 +131,24 @@ impl Uart
         }
     }
 
+    // Write a byte to the Transmit Holding Register (THR) to send data to the connected device.
     fn set_thr(&self, thr: u8)
     {
         unsafe
         {
             write_volatile((self.base + UART_THR) as *mut u8, thr);
         }
+    }
+}
+
+
+
+impl Write for SimpleUart
+{
+    fn write_str(&mut self, s: &str) -> fmt::Result
+    {
+        // Write the string to the UART, converting newlines to carriage return + newline.
+        self.put_str(s);
+        Ok(())
     }
 }
