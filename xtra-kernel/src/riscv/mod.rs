@@ -1,2 +1,2 @@
 
-mod csr;
+pub mod csr;

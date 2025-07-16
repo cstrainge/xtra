@@ -6,5 +6,4 @@
 ██╔╝ ██╗   ██║   ██║  ██╗██║  ██║
 ╚═╝  ╚═╝   ╚═╝   ╚═╝  ╚═╝╚═╝  ╚═╝
 
-Kernel version 0.0.0 loaded.
 Beginning boot sequence...

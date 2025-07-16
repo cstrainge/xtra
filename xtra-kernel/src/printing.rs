@@ -23,7 +23,6 @@ macro_rules! print
     ($($arg:tt)*) =>
         {{
             use core::{ fmt::Write, ptr::addr_of_mut };
-            use crate::printing::PRINTING_UART;
 
             unsafe
             {

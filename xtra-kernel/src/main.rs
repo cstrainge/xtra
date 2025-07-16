@@ -11,8 +11,11 @@
 // extern crate alloc;
 
 
+
 // Bring in the kernel subsystems that implement the core functionality of the Xtra kernel.
+#[cfg(target_arch = "riscv64")]
 mod riscv;
+
 mod device_tree;
 mod uart;
 mod printing;
@@ -21,7 +24,11 @@ mod scheduler;
 
 
 
-use core::{ arch::naked_asm, panic::PanicInfo };
+use core::{ arch::naked_asm,
+            hint::spin_loop,
+            panic::PanicInfo,
+            ptr::addr_of_mut,
+            sync::atomic::{ AtomicBool, Ordering } };
 
 use crate::{ device_tree::DeviceTree, printing::init_printing, scheduler::Scheduler };
 
@@ -36,11 +43,47 @@ const OS_BANNER_STR: &str = include_str!("../banner.txt");
 const OS_PANIC_STR: &str = include_str!("../panic.txt");
 
 
+// The version of the kernel, this is used to identify the kernel version in logs and other output.
+const KERNEL_VERSION: &str = env!("CARGO_PKG_VERSION");
+
+
+// The time the kernel was built.
+const KERNEL_BUILD_TIME: &str = env!("BUILD_TIME");
+
+
+// The profile the kernel was built with.
+const KERNEL_PROFILE: &str = env!("PROFILE");
+
+
+// Keep track of whether the system has booted or not. This is used to ensure that only the first
+// hart runs the boot process and the others wait for it to complete.
+static mut SYSTEM_BOOTED: AtomicBool = AtomicBool::new(false);
+
+
+
+fn system_booted() -> bool
+{
+    let booted_flag = unsafe { &mut *addr_of_mut!(SYSTEM_BOOTED) };
+
+    booted_flag.load(Ordering::Acquire)
+}
+
+
+
+fn set_system_booted()
+{
+    let mut booted_flag = unsafe { &mut *addr_of_mut!(SYSTEM_BOOTED) };
+
+    booted_flag.store(true, Ordering::Release);
+}
+
+
 
 // This is the raw starting point of the bootloader, it is called directly by the host environment,
 // in this case, QEMU. We setup a reasonable stack pointer and then jump to the main function, we
 // expect main to never return as it is its job to find and load the actual kernel image and
 // transfer control to it.
+#[cfg(target_arch = "riscv64")]
 #[unsafe(naked)]
 #[no_mangle]
 #[link_section = ".text._start"]
@@ -51,6 +94,7 @@ pub unsafe extern "C" fn _start()
     // proper main function.
     naked_asm!
     (
+        // TODO: Make sure that each core has its own stack pointer.
         //"la sp, _stack_start", // Load the stack pointer from the linker script.
         "j main"               // hart_id and dtb are already in a0 and a1, so just call main.
     );
@@ -73,20 +117,82 @@ fn kernel_panic_handler(info: &PanicInfo) -> !
 
 
 #[no_mangle]
-pub extern "C" fn main(_hart_id: usize, device_tree_ptr: *const u8) -> !
+pub extern "C" fn main(hart_id: usize, device_tree_ptr: *const u8) -> !
 {
-    // Initialize the device tree iterator from the pointer passed in by the host environment.
-    let device_tree = DeviceTree::new(device_tree_ptr);
+    // Make sure that we are only running the core boot process on the first hart.
+    if hart_id != 0
+    {
+        // Wait for the boot process to complete.
+        while !system_booted()
+        {
+            // Let the compiler know that this is a busy wait. This will allow it to emit hints to
+            // the CPU to optimize this loop and minimize it's power usage.
+            spin_loop();
+        }
+    }
+    else
+    {
+        // Initialize the device tree iterator from the pointer passed in by the host environment.
+        let device_tree = DeviceTree::new(device_tree_ptr);
 
-    // Init the logging system using the device tree to find the UART device. We use the system's
-    // first UART device for system logging. Any other UART devices will be used as consoles.
-    init_printing(&device_tree);
+        // Get our base CPU information from the RISC-V CSR registers.
+        let vendor_id = crate::riscv::csr::read_mvendorid();
+        let arch_id = crate::riscv::csr::read_marchid();
+        let imp_id = crate::riscv::csr::read_mimpid();
 
-    // Print the OS banner to the UART console.
-    println!("{}", OS_BANNER_STR);
+        // Init the logging system using the device tree to find the UART device. We use the
+        // system's first UART device for system logging. Any other UART devices will be used as
+        //  consoles.
+        init_printing(&device_tree);
+
+        // Print the OS banner to the UART console.
+        print!("{}", OS_BANNER_STR);
+        println!("Kernel version:    {}", KERNEL_VERSION);
+        println!("Kernel build time: {}", KERNEL_BUILD_TIME);
+        println!("Kernel profile:    {}", KERNEL_PROFILE);
+
+        println!("\nCPU Information:");
+        println!("Vendor ID:         0x{:x}", vendor_id);
+        println!("Arch ID:           0x{:x}", arch_id);
+        println!("Implementation ID: 0x{:x}", imp_id);
+        println!("Hart ID:           {}", hart_id);
+
+        // Determine where in RAM the kernel is loaded. We need to keep track of this so that we can
+        // mark these pages as used in the memory manager.
+
+        // We now need to properly initialize the MMU and map the kernel into high memory so that we
+        // can run from our proper address. This will involve resetting the PC to the new kernel
+        // address space.
+
+        // Now make sure that MMIO pages are mapped correctly so that we can access the hardware
+        // devices. We also need to make sure those pages are marked as used in the memory manager.
+
+        // Now we can initialize our heap allocator so that it can manage our heap memory in our
+        // proper address space.
+
+        // Initialize the interrupt controller so that we can handle interrupts and exceptions in
+        // the kernel.
+
+        // Walk the device tree and find and initialize our supported devices. Once this is done we
+        // can free the device tree pages. Any information needed from the device tree should be
+        // copied by the respective device drivers.
+
+        // Now that we have all the devices initialized, we can initialize the file systems and
+        // mount the root file system. We will need to find the boot volume and find the partition
+        // mapping so that we can map all partitions to where they need to go.
+
+        // We have a root file system at this point, we can now look under /bin and find the init
+        // program and prepare it for execution.
+
+        // Let other harts know that the boot process is complete.
+        set_system_booted();
+    }
 
     // Finally initialize the scheduler for this CPU core and start it running. The scheduler's run
     // method will never return.
+    //
+    // This will allow init to run and it will take care of the rest of the boot sequence and get us
+    // to a running system.
     let scheduler = Scheduler::new();
 
     scheduler.run();
