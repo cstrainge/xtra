@@ -852,22 +852,14 @@ impl VirtIoBlockDevice
 
         // Wait for the device to process the request.
         let starting_used_index = unsafe { USED.0.index };
-        let mut timeout = 10_000_000;
         let mut last_read = unsafe { USED.0.index };
 
-        while    last_read == starting_used_index
-              && timeout > 0
+        while last_read == starting_used_index
         {
-            timeout -= 1;
             unsafe { asm!("nop") };
 
             last_read = unsafe { USED.0.index };
             fence(Acquire);
-        }
-
-        if timeout == 0
-        {
-            return Err("Timeout waiting for VirtIO block device response.");
         }
 
         match unsafe { READ_STATUS }
