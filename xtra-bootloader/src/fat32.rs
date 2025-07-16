@@ -3,7 +3,7 @@
 // FAT32 filesystem on a given partition of a block device. This code is used to find and stream in
 // the kernel file from the filesystem.
 
-use core::slice::from_raw_parts_mut;
+use core::{ ptr::addr_of_mut, slice::from_raw_parts_mut };
 
 use crate::{ block_device::{ BlockDevice, SECTOR_SIZE },
              partition_table::{ MasterBootRecord, LegacyPartition } };
@@ -90,7 +90,7 @@ static mut SECTOR_CACHE: SectorCache = SectorCache::new();
 // freeing the buffer when done with it.
 fn get_sector_buffer() -> (usize, &'static mut SectorBuffer)
 {
-    unsafe { SECTOR_CACHE.get_buffer() }
+    unsafe { addr_of_mut!(SECTOR_CACHE).as_mut().unwrap().get_buffer() }
 }
 
 
@@ -99,7 +99,7 @@ fn get_sector_buffer() -> (usize, &'static mut SectorBuffer)
 // after it has been used. The index must be valid and within the range of the cache.
 fn free_sector_buffer(index: usize)
 {
-    unsafe { SECTOR_CACHE.free_buffer(index) }
+    unsafe { addr_of_mut!(SECTOR_CACHE).as_mut().unwrap().free_buffer(index) }
 }
 
 
@@ -146,7 +146,7 @@ impl<F: FnOnce()> Drop for Defer<F>
 // FAT table multiplied by the number of sectors per cluster used by the filesystem.
 //
 //     Size = MAX_FAT_ENTRIES * SECTOR_SIZE * SECTORS_PER_CLUSTER
-struct Fat
+pub struct Fat
 {
     entries: &'static mut [u32]  // Staticly allocated buffer for the FAT entries.
 }
@@ -193,7 +193,7 @@ impl Fat
         // table to the caller.
         Self::load_fat_table(block_device, partition, start_sector, size_in_sectors, buffer)?;
 
-        Ok(Fat { entries: unsafe { &mut FAT_BUFFER } })
+        Ok(Fat { entries: unsafe { addr_of_mut!(FAT_BUFFER).as_mut().unwrap() } })
     }
 
     // Actually load the File Allocation Table (FAT) from the given block device and partition.

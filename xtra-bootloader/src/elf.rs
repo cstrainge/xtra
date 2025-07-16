@@ -337,7 +337,7 @@ fn stream_kernel_segments(uart: &Uart,
         uart.put_str("\n");
 
         uart.put_str("    Memory Size:      ");
-        uart.put_hex(program_headers[index].p_memsz as usize, true);
+        uart.put_int(program_headers[index].p_memsz as usize);
         uart.put_str("\n");
 
         uart.put_str("    Alignment:        ");

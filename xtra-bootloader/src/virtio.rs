@@ -852,7 +852,7 @@ impl VirtIoBlockDevice
 
         // Wait for the device to process the request.
         let starting_used_index = unsafe { USED.0.index };
-        let mut timeout = 1_000_000;
+        let mut timeout = 10_000_000;
         let mut last_read = unsafe { USED.0.index };
 
         while    last_read == starting_used_index
