@@ -16,21 +16,29 @@
 #[cfg(target_arch = "riscv64")]
 mod riscv;
 
+// Make the printing macros available globally in the kernel.
+#[macro_use]
+mod printing;
+
 mod device_tree;
 mod uart;
-mod printing;
+mod memory;
 mod filesystems;
 mod scheduler;
 
 
 
 use core::{ arch::naked_asm,
+            fmt::Write,
             hint::spin_loop,
             panic::PanicInfo,
             ptr::addr_of_mut,
             sync::atomic::{ AtomicBool, Ordering } };
 
-use crate::{ device_tree::DeviceTree, printing::init_printing, scheduler::Scheduler };
+use crate::{ device_tree::DeviceTree,
+             printing::init_printing,
+             memory::kernel::KernelMemoryLayout,
+             scheduler::Scheduler };
 
 
 
@@ -61,6 +69,21 @@ static mut SYSTEM_BOOTED: AtomicBool = AtomicBool::new(false);
 
 
 
+const STACK_SIZE: usize = 0x1000;  // Go with a 4KB stack size for each hart.
+const MAX_HARTS: usize = 4;        // Maximum number of harts we support in the system.
+
+
+
+// Allocate the space for a stack for each hart in the system.
+// TODO: Make this a configurable option in a kernel config file.
+#[no_mangle]
+#[link_section = ".stacks"]
+static mut STACKS: [u8; STACK_SIZE * MAX_HARTS] = [0; STACK_SIZE * MAX_HARTS];
+
+
+
+// Check if the system has booted yet. This is used to ensure that only the first hart runs the
+// boot process and the others wait for it to complete.
 fn system_booted() -> bool
 {
     let booted_flag = unsafe { &mut *addr_of_mut!(SYSTEM_BOOTED) };
@@ -70,6 +93,8 @@ fn system_booted() -> bool
 
 
 
+// Signal to the secondary harts that the system is ready for them to start running their scheduler.
+// This is called by the first hart after it has completed the boot process.
 fn set_system_booted()
 {
     let mut booted_flag = unsafe { &mut *addr_of_mut!(SYSTEM_BOOTED) };
@@ -87,16 +112,25 @@ fn set_system_booted()
 #[unsafe(naked)]
 #[no_mangle]
 #[link_section = ".text._start"]
-pub unsafe extern "C" fn _start()
+pub unsafe extern "C" fn _start() -> !
 {
     // This function is called system startup code. There is no Rust runtime available at this
     // point, so we cannot use any Rust features, we just setup the stack and then jump to the
     // proper main function.
     naked_asm!
     (
-        // TODO: Make sure that each core has its own stack pointer.
-        //"la sp, _stack_start", // Load the stack pointer from the linker script.
-        "j main"               // hart_id and dtb are already in a0 and a1, so just call main.
+        // a0 = hart_id, a1 = dtb_ptr
+        "la t0, STACKS",        // t0 = &STACKS.
+        "li t1, {stack_size}",  // t1 = STACK_SIZE.
+        "mul t2, a0, t1",       // t2 = hart_id * STACK_SIZE.
+
+        "add t0, t0, t2",       // t0 = &STACKS[hart_id * STACK_SIZE].
+        "add t0, t0, t1",       // t0 = &STACKS[(hart_id+1)*STACK_SIZE].
+        "mv sp, t0",            // set sp to top of stack for this hart.
+
+        "j main",               // hart_id and dtb are already in a0 and a1, so just call main.
+
+        stack_size = const STACK_SIZE
     );
 }
 
@@ -159,6 +193,9 @@ pub extern "C" fn main(hart_id: usize, device_tree_ptr: *const u8) -> !
 
         // Determine where in RAM the kernel is loaded. We need to keep track of this so that we can
         // mark these pages as used in the memory manager.
+        let kernel_memory_layout = KernelMemoryLayout::new();
+
+        println!("\n{}", kernel_memory_layout);
 
         // We now need to properly initialize the MMU and map the kernel into high memory so that we
         // can run from our proper address. This will involve resetting the PC to the new kernel

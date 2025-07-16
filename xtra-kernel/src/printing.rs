@@ -5,6 +5,8 @@
 // tree. We use the simple UART implementation so that we can print from code executing  without
 // interrupts enabled.
 
+use core::num;
+
 use crate::{ device_tree::DeviceTree, uart::SimpleUart };
 
 
@@ -58,6 +60,138 @@ macro_rules! println
     ($fmt:expr, $($arg:tt)*) =>
         {{
             print!(concat!($fmt, "\n"), $($arg)*);
+        }};
+}
+
+
+
+// Function to format a number as a comma-separated string.
+pub fn comma_separated_int(number: u64, buffer: &mut [u8; 32]) -> usize
+{
+    let mut number = number;
+    let mut index = buffer.len() - 1;
+    let mut count = 0;
+
+    buffer.fill(0);
+
+    if number == 0
+    {
+        buffer[index] = b'0';
+        return index;
+    }
+
+    while number > 0
+    {
+        // Make sure to add the comma every 2 digits.
+        if    count > 0
+           && count % 3 == 0
+        {
+            buffer[index] = b',';
+            index -= 1;
+        }
+
+        buffer[index] = (number % 10) as u8 + b'0';
+        number /= 10;
+        count += 1;
+
+        if index == 0
+        {
+            break;
+        }
+
+        index -= 1;
+    }
+
+    index + 1
+}
+
+
+
+// Function to format a floating-point number as a comma-separated string.
+pub fn comma_separated_float(number: f64, buffer: &mut [u8; 64]) -> usize
+{
+    let mut integer_buffer = [0u8; 32];
+
+    // Simple integer conversion
+    let integer_part = number as u64;
+    let fractional_part = ((number - integer_part as f64) * 10.0 + 0.5) as u64;  // ✅ Manual rounding
+
+    // Handle case where rounding pushes us to next integer (e.g., 9.95 -> 10.0)
+    let (final_integer, final_fractional) = if fractional_part >= 10 {
+        (integer_part + 1, 0)
+    } else {
+        (integer_part, fractional_part)
+    };
+
+    let integer_start = comma_separated_int(final_integer, &mut integer_buffer);
+    let integer_len = 32 - integer_start;
+
+    buffer[0..integer_len].copy_from_slice(&integer_buffer[integer_start..]);
+    buffer[integer_len] = b'.';
+    buffer[integer_len + 1] = final_fractional as u8 + b'0';
+
+    integer_len + 2
+}
+
+
+
+#[macro_export]
+macro_rules! buffer_as_string
+{
+    ($buffer:expr) => {{
+        use core::str;
+
+        // SAFETY: We assume the buffer is valid UTF-8.
+        unsafe { str::from_utf8_unchecked(&$buffer) }
+    }};
+}
+
+
+
+// Format a data size in a human-readable format, e.g., "1.2 MB (1,234,567 bytes)".
+#[macro_export]
+macro_rules! write_size
+{
+    ($f:expr, $n:expr) =>
+        {{
+            use crate::printing::{ comma_separated_float, comma_separated_int };
+
+            let mut float_buffer = [0u8; 64];
+            let mut int_buffer = [0u8; 32];
+
+            let n = $n as u64;
+
+            if n >= 1_048_576
+            {
+                let mut float_value = n as f64 / 1_048_576.0;
+                let mut float_length = comma_separated_float(float_value, &mut float_buffer);
+                let mut float_string = buffer_as_string!(&float_buffer[..float_length]);
+
+                let int_start = comma_separated_int(n, &mut int_buffer);
+                let int_string = buffer_as_string!(&int_buffer[int_start..]);
+
+                write!($f, "{:.1} MB ({} bytes)",
+                        float_string,
+                        int_string)
+            }
+            else if n >= 1024
+            {
+                let float_value = n as f64 / 1024.0;
+                let float_length = comma_separated_float(float_value, &mut float_buffer);
+                let float_string = buffer_as_string!(&float_buffer[..float_length]);
+
+                let int_start = comma_separated_int(n, &mut int_buffer);
+                let int_string = buffer_as_string!(&int_buffer[int_start..]);
+
+                write!($f, "{} KB ({} bytes)", float_string, int_string)
+            }
+            else
+            {
+                let int_start = comma_separated_int(n, &mut int_buffer);
+                let int_string = buffer_as_string!(&int_buffer[int_start..]);
+
+                write!($f, "{} bytes", int_string)
+            }
         }};
 }
 
