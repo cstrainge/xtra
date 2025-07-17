@@ -429,3 +429,18 @@ impl DeviceTree
         }
     }
 }
+
+
+
+pub fn filter_device_name(device_name: &str) -> &str
+{
+    // If the device name contains an '@' character, we want to strip it and everything after it.
+    if let Some(at_index) = device_name.find('@')
+    {
+        &device_name[..at_index]
+    }
+    else
+    {
+        device_name
+    }
+}

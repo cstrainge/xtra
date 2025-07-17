@@ -5,6 +5,11 @@
     "rust-analyzer.checkOnSave.enable": false,
     "rust-analyzer.diagnostics.enable": false,
 
+    "rust-analyzer.imports.granularity.enforce": false,
+    "rust-analyzer.imports.granularity.group": "preserve",
+    "rust-analyzer.imports.prefix": "self",
+    "rust-analyzer.completion.autoimport.enable": false,
+
     "cSpell.words": [
         "bootable",
         "chrono",

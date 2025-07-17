@@ -37,7 +37,7 @@ use core::{ arch::naked_asm,
 
 use crate::{ device_tree::DeviceTree,
              printing::init_printing,
-             memory::kernel::KernelMemoryLayout,
+             memory::{ kernel::KernelMemoryLayout, memory_device::SystemMemory },
              scheduler::Scheduler };
 
 
@@ -184,18 +184,25 @@ pub extern "C" fn main(hart_id: usize, device_tree_ptr: *const u8) -> !
         println!("Kernel version:    {}", KERNEL_VERSION);
         println!("Kernel build time: {}", KERNEL_BUILD_TIME);
         println!("Kernel profile:    {}", KERNEL_PROFILE);
+        println!();
 
-        println!("\nCPU Information:");
+        println!("CPU Information:");
         println!("Vendor ID:         0x{:x}", vendor_id);
         println!("Arch ID:           0x{:x}", arch_id);
         println!("Implementation ID: 0x{:x}", imp_id);
         println!("Hart ID:           {}", hart_id);
+        println!();
 
         // Determine where in RAM the kernel is loaded. We need to keep track of this so that we can
         // mark these pages as used in the memory manager.
         let kernel_memory_layout = KernelMemoryLayout::new();
 
-        println!("\n{}", kernel_memory_layout);
+        println!("{}", kernel_memory_layout);
+
+        // Interrogate the memory to find out what we are working with.
+        let memory_info = SystemMemory::new(&device_tree);
+
+        println!("{}", memory_info);
 
         // We now need to properly initialize the MMU and map the kernel into high memory so that we
         // can run from our proper address. This will involve resetting the PC to the new kernel

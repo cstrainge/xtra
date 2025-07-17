@@ -5,8 +5,6 @@
 // tree. We use the simple UART implementation so that we can print from code executing  without
 // interrupts enabled.
 
-use core::num;
-
 use crate::{ device_tree::DeviceTree, uart::SimpleUart };
 
 
@@ -161,16 +159,29 @@ macro_rules! write_size
 
             let n = $n as u64;
 
-            if n >= 1_048_576
+            if n >= 1_048_576 * 1024
             {
-                let mut float_value = n as f64 / 1_048_576.0;
-                let mut float_length = comma_separated_float(float_value, &mut float_buffer);
-                let mut float_string = buffer_as_string!(&float_buffer[..float_length]);
+                let float_value = n as f64 / (1_048_576.0 * 1024.0);
+                let float_length = comma_separated_float(float_value, &mut float_buffer);
+                let float_string = buffer_as_string!(&float_buffer[..float_length]);
 
                 let int_start = comma_separated_int(n, &mut int_buffer);
                 let int_string = buffer_as_string!(&int_buffer[int_start..]);
 
-                write!($f, "{:.1} MB ({} bytes)",
+                write!($f, "{} GB ({} bytes)",
+                        float_string,
+                        int_string)
+            }
+            else if n >= 1_048_576
+            {
+                let float_value = n as f64 / 1_048_576.0;
+                let float_length = comma_separated_float(float_value, &mut float_buffer);
+                let float_string = buffer_as_string!(&float_buffer[..float_length]);
+
+                let int_start = comma_separated_int(n, &mut int_buffer);
+                let int_string = buffer_as_string!(&int_buffer[int_start..]);
+
+                write!($f, "{} MB ({} bytes)",
                         float_string,
                         int_string)
             }
