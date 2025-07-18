@@ -134,7 +134,7 @@ impl DeviceTree
                             uart.put_char(b'[');
                             uart.put_int(prop_value.len());
                             uart.put_str("] = ");
-                            uart.put_hex_bytes(prop_value, Some(8));
+                            uart.put_hex_bytes(prop_value, Some(16));
                         }
 
                         uart.put_str("\n");
