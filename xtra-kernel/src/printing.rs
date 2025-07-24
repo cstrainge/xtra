@@ -5,13 +5,21 @@
 // tree. We use the simple UART implementation so that we can print from code executing  without
 // interrupts enabled.
 
-use crate::{ arch::device_tree::DeviceTree, uart::SimpleUart };
+use crate::{ arch::device_tree::DeviceTree,
+             locking::{ LockGuard, Locking, spin_lock::SpinLock },
+             uart::SimpleUart };
 
 
 
 // Global reference to the UART device used for printing. This is initialized at boot time and
 // used throughout the kernel for logging output.
 pub static mut PRINTING_UART: SimpleUart = SimpleUart::zeroed();
+
+
+
+/// Spinlock for protecting access to the printing UART. This is used to ensure that only one thread
+/// can write text out the UART at a time, preventing interleaved output.
+pub static PRINTING_LOCK: SpinLock = SpinLock::new();
 
 
 
@@ -24,14 +32,20 @@ macro_rules! print
         {{
             use core::{ fmt::Write, ptr::addr_of_mut };
 
+            use crate::{ printing::{ PRINTING_UART, PRINTING_LOCK },
+                         locking::LockGuard };
+
             unsafe
             {
                 // When printing we print to the logging UART device that we initialized at boot
                 // time.
-                let uart = &mut *addr_of_mut!(crate::printing::PRINTING_UART);
+                let uart = &mut *addr_of_mut!(PRINTING_UART);
 
                 if uart.is_initialized()
                 {
+                    // Make sure that only one hardware thread can write to the UART at a time.
+                    let _guard = LockGuard::new(&PRINTING_LOCK);
+
                     uart.write_fmt(format_args!($($arg)*)).unwrap();
                 }
             }
@@ -40,8 +54,8 @@ macro_rules! print
 
 
 
-// Implement the standard println! macro for printing formatted output from the kernel to an
-// attached UART device. This macro appends a newline character to the end of the output.
+/// Implement the standard println! macro for printing formatted output from the kernel to an
+/// attached UART device. This macro appends a newline character to the end of the output.
 #[macro_export]
 macro_rules! println
 {
@@ -63,7 +77,7 @@ macro_rules! println
 
 
 
-// Function to format a number as a comma-separated string.
+/// Function to format a number as a comma-separated string.
 pub fn comma_separated_int(number: u64, buffer: &mut [u8; 32]) -> usize
 {
     let mut number = number;
@@ -105,21 +119,28 @@ pub fn comma_separated_int(number: u64, buffer: &mut [u8; 32]) -> usize
 
 
 
-// Function to format a floating-point number as a comma-separated string.
+/// Function to format a floating-point number as a comma-separated string, for example 1024 is
+/// converted to the string "1,024".
+///
+/// The string is written into the provided buffer, which must be at least 64 bytes long. This
+/// function will return the length of the string written to the buffer.
 pub fn comma_separated_float(number: f64, buffer: &mut [u8; 64]) -> usize
 {
     let mut integer_buffer = [0u8; 32];
 
     // Simple integer conversion
     let integer_part = number as u64;
-    let fractional_part = ((number - integer_part as f64) * 10.0 + 0.5) as u64;  // ✅ Manual rounding
+    let fractional_part = ((number - integer_part as f64) * 10.0 + 0.5) as u64;
 
     // Handle case where rounding pushes us to next integer (e.g., 9.95 -> 10.0)
-    let (final_integer, final_fractional) = if fractional_part >= 10 {
-        (integer_part + 1, 0)
-    } else {
-        (integer_part, fractional_part)
-    };
+    let (final_integer, final_fractional) = if fractional_part >= 10
+        {
+            (integer_part + 1, 0)
+        }
+        else
+        {
+            (integer_part, fractional_part)
+        };
 
     let integer_start = comma_separated_int(final_integer, &mut integer_buffer);
     let integer_len = 32 - integer_start;
@@ -133,20 +154,22 @@ pub fn comma_separated_float(number: f64, buffer: &mut [u8; 64]) -> usize
 
 
 
+/// Convert a buffer of bytes into a string.
 #[macro_export]
 macro_rules! buffer_as_string
 {
-    ($buffer:expr) => {{
-        use core::str;
+    ($buffer:expr) =>
+        {{
+            use core::str;
 
-        // SAFETY: We assume the buffer is valid UTF-8.
-        unsafe { str::from_utf8_unchecked(&$buffer) }
-    }};
+            // SAFETY: We assume the buffer is valid UTF-8.
+            unsafe { str::from_utf8_unchecked(&$buffer) }
+        }};
 }
 
 
 
-// Format a data size in a human-readable format, e.g., "1.2 MB (1,234,567 bytes)".
+/// Format a data size in a human-readable format, e.g., "1.2 MB (1,234,567 bytes)".
 #[macro_export]
 macro_rules! write_size
 {
@@ -208,8 +231,8 @@ macro_rules! write_size
 
 
 
-// Initializes the printing system by finding the first UART device in the device tree and setting
-// it up for use. This function will panic if no UART device is found in the device tree.
+/// Initializes the printing system by finding the first UART device in the device tree and setting
+/// it up for use. This function will panic if no UART device is found in the device tree.
 pub fn init_printing(device_tree: &DeviceTree)
 {
     let mut found_uart = false;
