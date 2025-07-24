@@ -1,14 +1,14 @@
 
-// Implementation of the Device Tree Blob (DTB) structure and methods to read and iterate through
-// the device tree structure and properties.
-//
-// It's up the calling code to interpret the device tree blocks and their properties.
+/// Implementation of the Device Tree Blob (DTB) structure and methods to read and iterate through
+/// the device tree structure and properties.
+///
+/// It's up the calling code to interpret the device tree blocks and their properties.
 
 use core::{ ptr, slice::from_raw_parts, str::from_utf8_unchecked };
 
 
 
-// Make sure that the device tree is valid by checking its magic number.
+/// Make sure that the device tree is valid by checking its magic number.
 pub fn validate_dtb(device_tree_ptr: *const u8) -> bool
 {
     let magic = unsafe { u32::from_be(ptr::read(device_tree_ptr as *const u32)) };
@@ -25,25 +25,43 @@ pub fn validate_dtb(device_tree_ptr: *const u8) -> bool
 
 
 
-// The DeviceTree structure represents the device tree blob (DTB) header and provides methods to
-// read and iterate through the device tree structure and properties.
-//
-// Because we are running in a heapless we manage the device tree structure in place and do not
-// allocate any memory for it. The device tree is expected to receive a pointer to the start of the
-// device tree blob (DTB) in memory.
+/// The DeviceTree structure represents the device tree blob (DTB) header and provides methods to
+/// read and iterate through the device tree structure and properties.
+///
+/// Because we are running in a heapless we manage the device tree structure in place and do not
+/// allocate any memory for it. The device tree is expected to receive a pointer to the start of the
+/// device tree blob (DTB) in memory.
 pub struct DeviceTree
 {
-    dtb_base: *const u8,      // Pointer to the start of the device tree blob.
+    /// Pointer to the start of the device tree blob.
+    dtb_base: *const u8,
 
-    _total_size: u32,         // Total size of DTB in bytes.
-    off_dt_struct: u32,       // Offset to structure block.
-    off_dt_strings: u32,      // Offset to strings block.
-    _off_mem_res_map: u32,    // Offset to memory reservation block.
-    _version: u32,            // DTB version (typically 17).
-    _last_comp_version: u32,  // Last compatible version (17).
-    _boot_cpu_id_phys: u32,   // Physical ID of boot CPU.
-    _size_dt_strings: u32,    // Length of strings block.
-    size_dt_struct: u32,      // Length of structure block.
+    /// Total size of DTB in bytes.
+    _total_size: u32,
+
+    /// Offset to structure block.
+    off_dt_struct: u32,
+
+    /// Offset to strings block.
+    off_dt_strings: u32,
+
+    /// Offset to memory reservation block.
+    _off_mem_res_map: u32,
+
+    /// DTB version (typically 17).
+    _version: u32,
+
+    /// Last compatible version (17).
+    _last_comp_version: u32,
+
+    /// Physical ID of boot CPU.
+    _boot_cpu_id_phys: u32,
+
+    /// Length of strings block.
+    _size_dt_strings: u32,
+
+    /// Length of structure block.
+    size_dt_struct: u32,
 }
 
 
@@ -59,6 +77,14 @@ const END: u32        = 0x0000_0009;  // End marker.
 
 impl DeviceTree
 {
+    /// Create a new DeviceTree walker instance from the given address in RAM where the device tree
+    /// binary blob is located.
+    ///
+    /// Once constructed the calling code will be able to iterate through the device tree's nodes
+    /// and properties.
+    ///
+    /// The device tree walker does not allocate any heap memory so is suitable for early use in the
+    /// kernel before the heap is initialized.
     pub fn new(device_tree_ptr: *const u8) -> DeviceTree
     {
         // Get the pointer to the start of the device tree header, just past the magic number.
@@ -82,9 +108,9 @@ impl DeviceTree
         }
     }
 
-    // Read a 32-bit unsigned integer from the device tree header, assuming big-endian format.
-    // The data_ptr is a mutable pointer to the current position in the device tree header.
-    // It is updated to point to the next field after reading.
+    /// Read a 32-bit unsigned integer from the device tree header, assuming big-endian format.
+    /// The data_ptr is a mutable pointer to the current position in the device tree header.
+    /// It is updated to point to the next field after reading.
     fn read_u32(data_ptr: &mut *const u32) -> u32
     {
         unsafe
@@ -96,11 +122,11 @@ impl DeviceTree
         }
     }
 
-    // Iterate through the device tree structure block, calling the callback for each found node.
-    //
-    // The callback receives the name of the node and the current byte offset in the structure
-    // block. The callback can then use that offset to iterate through the properties of the node,
-    // (if any.)
+    /// Iterate through the device tree structure block, calling the callback for each found node.
+    ///
+    /// The callback receives the name of the node and the current byte offset in the structure
+    /// block. The callback can then use that offset to iterate through the properties of the node,
+    /// (if any.)
     pub fn iterate_blocks<Func>(&self, mut callback: Func)
         where
             Func: FnMut(usize, &str) -> bool
@@ -200,6 +226,11 @@ impl DeviceTree
         }
     }
 
+    /// Iterate through the properties of a node, starting from the given base offset of the node
+    /// itself in memory.
+    ///
+    /// The callback will be called once for each property found in the node. If the callback
+    /// returns true, the iteration continues. If it returns false, the iteration stops.
     pub fn iterate_properties<Func>(&self, base_offset: usize, mut callback: Func)
         where
             Func: FnMut(&str, &[u8]) -> bool
@@ -314,8 +345,8 @@ impl DeviceTree
         }
     }
 
-    // Move through the device tree structure block, making sure that we don't read past the end
-    // of the data structure. Panic if we do.
+    /// Move through the device tree structure block, making sure that we don't read past the end
+    /// of the data structure. Panic if we do.
     fn increment_offset(&self, offset: &mut usize, size: usize)
     {
         // Increment the offset by the given size, ensuring it is aligned to a 4-byte boundary.
@@ -327,10 +358,10 @@ impl DeviceTree
         }
     }
 
-    // Create a string reference from the bytes in the device tree structure block at the given
-    // pointer. The string is expected to be null-terminated.
-    //
-    // Return the string reference and the size of the string including the null terminator.
+    /// Create a string reference from the bytes in the device tree structure block at the given
+    /// pointer. The string is expected to be null-terminated.
+    ///
+    /// Return the string reference and the size of the string including the null terminator.
     fn extract_node_name_to_buffer(&self, name_ptr: *const u8) -> ( &str, usize )
     {
         const SIZE: usize = 256;
@@ -359,6 +390,8 @@ impl DeviceTree
 
 
 
+/// Without relying on a heap extract the core device name from the name string. In the device tree
+/// the name is often of the format "device_name@address", where the address is optional.
 pub fn filter_device_name(device_name: &str) -> &str
 {
     // If the device name contains an '@' character, we want to strip it and everything after it.
