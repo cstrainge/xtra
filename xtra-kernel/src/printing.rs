@@ -77,7 +77,8 @@ macro_rules! println
 
 
 
-/// Function to format a number as a comma-separated string.
+/// Function to format a number as a comma-separated string. For example, 1234567 is converted to
+/// the string "1,234,567".
 pub fn comma_separated_int(number: u64, buffer: &mut [u8; 32]) -> usize
 {
     let mut number = number;
@@ -119,8 +120,8 @@ pub fn comma_separated_int(number: u64, buffer: &mut [u8; 32]) -> usize
 
 
 
-/// Function to format a floating-point number as a comma-separated string, for example 1024 is
-/// converted to the string "1,024".
+/// Function to format a floating-point number as a comma-separated string, for example 1024.0 is
+/// converted to the string "1,024.0".
 ///
 /// The string is written into the provided buffer, which must be at least 64 bytes long. This
 /// function will return the length of the string written to the buffer.
