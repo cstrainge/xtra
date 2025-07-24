@@ -1,9 +1,14 @@
 
 {
     "rust-analyzer.cargo.features": [],
-    "rust-analyzer.cargo.buildScripts.enable": false,
+    //"rust-analyzer.check.targets": "release",
+    "rust-analyzer.cargo.target": "riscv64imac-unknown-none-elf",
+    "rust-analyzer.cargo.buildScripts.enable": true,
     "rust-analyzer.checkOnSave.enable": false,
-    "rust-analyzer.diagnostics.enable": false,
+    //"rust-analyzer.diagnostics.enable": false,
+    "rust-analyzer.cargo.noDefaultFeatures": true,
+    "rust-analyzer.cargo.allFeatures": false,
+
 
     "rust-analyzer.imports.granularity.enforce": false,
     "rust-analyzer.imports.granularity.group": "preserve",
@@ -57,6 +62,7 @@
         "shstrndx",
         "Staticly",
         "Tlink",
+        "unmapping",
         "vaddr",
         "virtio",
         "VIRTQ",
