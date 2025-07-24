@@ -5,7 +5,7 @@
 // tree. We use the simple UART implementation so that we can print from code executing  without
 // interrupts enabled.
 
-use crate::{ device_tree::DeviceTree, uart::SimpleUart };
+use crate::{ arch::device_tree::DeviceTree, uart::SimpleUart };
 
 
 

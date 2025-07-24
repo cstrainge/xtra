@@ -7,7 +7,7 @@
 
 use core::{ fmt::{ self, Display, Formatter }, str::from_utf8 };
 
-use crate::{ device_tree::{ DeviceTree, filter_device_name } };
+use crate::{ arch::device_tree::{ DeviceTree, filter_device_name } };
 
 
 

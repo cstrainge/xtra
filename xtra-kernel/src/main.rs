@@ -20,10 +20,6 @@
 /// specific to the architecture we are running on, in this case, RISC-V.
 mod arch;
 
-/// Used to read the incoming device tree from the bootloader. This is used to find hardware devices
-/// and provide their configuration information.
-mod device_tree;
-
 /// The simple logging UART device handler. This version of the UART doesn't handle input or
 /// interrupts,
 mod uart;
@@ -56,8 +52,7 @@ use core::{ arch::naked_asm,
             ptr::addr_of_mut,
             sync::atomic::{ AtomicBool, Ordering } };
 
-use crate::{ arch::{ get_core_index, print_cpu_info },
-             device_tree::DeviceTree,
+use crate::{ arch::{ device_tree::DeviceTree, get_core_index, print_cpu_info },
              printing::init_printing,
              memory::{ kernel::KernelMemoryLayout,
                        memory_device::SystemMemory,

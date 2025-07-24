@@ -3,6 +3,13 @@
 
 
 
+/// Handler code for walking the device tree in memory as supplied by the BIOS or bootloader. Only
+/// enabled on architectures that support a device tree, such as RISC-V or ARM.
+#[cfg(target_arch = "riscv64")]
+pub mod device_tree;
+
+
+
 /// All the RISC-V 64 specific code for the kernel.
 #[cfg(target_arch = "riscv64")]
 mod riscv_64;
