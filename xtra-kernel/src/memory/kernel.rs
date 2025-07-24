@@ -9,9 +9,9 @@ use core::fmt::{ self, Display, Formatter };
 // Represents a section of memory in the kernel layout,
 pub struct SectionLayout
 {
-    start: usize,  // Start address of the section.
-    end: usize,    // End address of the section.
-    size: usize    // Size of the section in bytes.
+    pub start: usize,  // Start address of the section.
+    pub end: usize,    // End address of the section.
+    pub size: usize    // Size of the section in bytes.
 }
 
 
@@ -127,38 +127,38 @@ impl Display for KernelMemoryLayout
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result
     {
         writeln!(f, "Kernel Memory Layout:")?;
-        write!(f, "  Range:           0x{:08x} - 0x{:08x}: ",
+        write!(f, "  Range:             0x{:08x} - 0x{:08x}: ",
                  self.kernel.start,
                  self.kernel.end)?;
         write_size!(f, self.kernel.size)?;
         writeln!(f)?;
 
         writeln!(f, "  Sections:")?;
-        write!(f, "    .text:         0x{:08x} - 0x{:08x}: ",
+        write!(f, "    .text:           0x{:08x} - 0x{:08x}: ",
                  self.text.start,
                  self.text.end)?;
         write_size!(f, self.text.size)?;
         writeln!(f)?;
 
-        write!(f, "    .rodata:       0x{:08x} - 0x{:08x}: ",
+        write!(f, "    .rodata:         0x{:08x} - 0x{:08x}: ",
                  self.rodata.start,
                  self.rodata.end)?;
         write_size!(f, self.rodata.size)?;
         writeln!(f)?;
 
-        write!(f, "    .data:         0x{:08x} - 0x{:08x}: ",
+        write!(f, "    .data:           0x{:08x} - 0x{:08x}: ",
                  self.data.start,
                  self.data.end)?;
         write_size!(f, self.data.size)?;
         writeln!(f)?;
 
-        write!(f, "    .bss:          0x{:08x} - 0x{:08x}: ",
+        write!(f, "    .bss:            0x{:08x} - 0x{:08x}: ",
                  self.bss.start,
                  self.bss.end)?;
         write_size!(f, self.bss.size)?;
         writeln!(f)?;
 
-        write!(f, "    .stack:        0x{:08x} - 0x{:08x}: ",
+        write!(f, "    .stack:          0x{:08x} - 0x{:08x}: ",
                  self.stack.start,
                  self.stack.end)?;
         write_size!(f, self.stack.size)?;

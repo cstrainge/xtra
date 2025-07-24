@@ -4,16 +4,31 @@
 
 
 
-// Important memory constants.
+// TODO: Make this a kernel configuration option so that we can change the page size at compile
+//       time.
+
+/// The size of a memory page as used on this system/architecture. This is typically 4KB on most
+/// systems, but can vary based on the architecture and configuration.
 const PAGE_SIZE: usize = 4096;  // Our memory is split into 4KB pages.
 
 
 
 // The sub-modules of the memory subsystem.
-pub mod kernel;      // Information about the kernel's memory usage and layout.
-pub mod memory_device;  // The RAM device provides the kernel access to information about the system's
-                     //   RAM, layout and availability.
-pub mod page_table;  // The page table management for the kernel.
-pub mod mmu;         // Manage the MMU for the kernel.
-pub mod heap;        // The kernel's heap allocator, including the implementation of the Rust global
-                     //   allocator.
+
+/// Information about the kernel's memory usage and layout.
+pub mod kernel;
+
+
+/// The RAM device provides the kernel access to information about the system's RAM, layout and
+/// availability.
+pub mod memory_device;
+
+
+/// The high level MMU interface for the kernel. The interface is architecture agnostic and will
+/// manage the pages of memory in the system, both used and free.
+pub mod mmu;
+
+
+/// Our Rust heap and global allocator are implemented in this module. It is built on top of the
+/// MMU module and provides the interface for allocating and freeing memory from the heap.
+pub mod heap;

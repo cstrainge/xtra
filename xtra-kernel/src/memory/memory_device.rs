@@ -130,11 +130,13 @@ impl Display for FlashDevice
     fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), fmt::Error>
     {
         writeln!(f, "  FLASH Device:")?;
-        writeln!(f, "    Base Address:  0x{:x}", self.base_address)?;
-        write!(f, "    Range:         ")?;
+        writeln!(f, "    Address Range:   0x{:016x} - 0x{:016x}",
+                 self.base_address,
+                 self.base_address + self.range)?;
+        write!(f, "    Size:            ")?;
         write_size!(f, self.range)?;
         writeln!(f)?;
-        writeln!(f, "    Bank Width:    {} bytes", self.bank_width)?;
+        writeln!(f, "    Bank Width:      {} bytes", self.bank_width)?;
 
         Ok(())
     }
@@ -250,8 +252,10 @@ impl Display for MemoryDevice
     fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), fmt::Error>
     {
         writeln!(f, "  RAM Device:")?;
-        writeln!(f, "    Base Address:  0x{:x}", self.base_address)?;
-        write!(f, "    Range:         ")?;
+        writeln!(f, "    Address Range:   0x{:016x} - 0x{:016x}",
+                 self.base_address,
+                 self.base_address + self.range)?;
+        write!(f, "    Size:            ")?;
         write_size!(f, self.range)?;
         writeln!(f)?;
 
@@ -274,16 +278,6 @@ pub struct MmioRegion
 
 impl MmioRegion
 {
-    /// Create a new invalid instance of a MMIO region.
-    pub const fn new() -> Self
-    {
-        MmioRegion
-            {
-                base_address: INVALID_MEM_BASE_ADDRESS,  // Default to an invalid address.
-                range: 0                                 // Default to a zero range.
-            }
-    }
-
     /// Create a new instance of a MMIO region from a start and end address.
     pub fn from_range(base_address: usize, range: usize) -> Self
     {
@@ -303,8 +297,10 @@ impl Display for MmioRegion
     fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), fmt::Error>
     {
         writeln!(f, "  MMIO Region:")?;
-        writeln!(f, "    Base Address:  0x{:x}", self.base_address)?;
-        write!(f, "    Range:         ")?;
+        writeln!(f, "    Address Range:   0x{:016x} - 0x{:016x}",
+                 self.base_address,
+                 self.base_address + self.range)?;
+        write!(f, "    Size:            ")?;
         write_size!(f, self.range)?;
         writeln!(f)?;
 
@@ -320,11 +316,6 @@ impl Display for MmioRegion
 ///
 /// We can also in the future provide a special FLASH device in the system that can be used to
 /// read and write from the found FLASH device(s).
-///
-/// For simplicity we map all MMIO based devices into a single MMIO region for later mapping into
-/// the kernel's virtual address space. This is because we don't expect to have more than one
-/// MMIO region in the system, but if we do, we can extend this to support multiple MMIO regions in
-/// the future.
 pub struct SystemMemory
 {
     pub flash_devices: [Option<FlashDevice>; MAX_FLASH_DEVICES],  // The FLASH device(s).
@@ -507,7 +498,7 @@ impl Display for SystemMemory
         }
         else
         {
-            writeln!(f, "  No FLASH devices found.");
+            writeln!(f, "  No FLASH devices found.")?;
         }
 
         if self.memory_devices.iter().any(|d| d.is_some())
@@ -522,7 +513,7 @@ impl Display for SystemMemory
         }
         else
         {
-            writeln!(f, "  No RAM devices found.");
+            writeln!(f, "  No RAM devices found.")?;
         }
 
         if self.mmio_regions.iter().any(|d| d.is_some())
@@ -537,7 +528,7 @@ impl Display for SystemMemory
         }
         else
         {
-            writeln!(f, "  No MMIO regions found.");
+            writeln!(f, "  No MMIO regions found.")?;
         }
 
         Ok(())

@@ -36,14 +36,14 @@ pub struct DeviceTree
 {
     dtb_base: *const u8,      // Pointer to the start of the device tree blob.
 
-    total_size: u32,          // Total size of DTB in bytes.
+    _total_size: u32,         // Total size of DTB in bytes.
     off_dt_struct: u32,       // Offset to structure block.
     off_dt_strings: u32,      // Offset to strings block.
-    off_mem_res_map: u32,     // Offset to memory reservation block.
-    version: u32,             // DTB version (typically 17).
-    last_comp_version: u32,   // Last compatible version (17).
-    boot_cpu_id_phys: u32,    // Physical ID of boot CPU.
-    size_dt_strings: u32,     // Length of strings block.
+    _off_mem_res_map: u32,    // Offset to memory reservation block.
+    _version: u32,            // DTB version (typically 17).
+    _last_comp_version: u32,  // Last compatible version (17).
+    _boot_cpu_id_phys: u32,   // Physical ID of boot CPU.
+    _size_dt_strings: u32,    // Length of strings block.
     size_dt_struct: u32,      // Length of structure block.
 }
 
@@ -69,14 +69,14 @@ impl DeviceTree
         {
             dtb_base: device_tree_ptr,
 
-            total_size: DeviceTree::read_u32(&mut ptr),
+            _total_size: DeviceTree::read_u32(&mut ptr),
             off_dt_struct: DeviceTree::read_u32(&mut ptr),
             off_dt_strings: DeviceTree::read_u32(&mut ptr),
-            off_mem_res_map: DeviceTree::read_u32(&mut ptr),
-            version: DeviceTree::read_u32(&mut ptr),
-            last_comp_version: DeviceTree::read_u32(&mut ptr),
-            boot_cpu_id_phys: DeviceTree::read_u32(&mut ptr),
-            size_dt_strings: DeviceTree::read_u32(&mut ptr),
+            _off_mem_res_map: DeviceTree::read_u32(&mut ptr),
+            _version: DeviceTree::read_u32(&mut ptr),
+            _last_comp_version: DeviceTree::read_u32(&mut ptr),
+            _boot_cpu_id_phys: DeviceTree::read_u32(&mut ptr),
+            _size_dt_strings: DeviceTree::read_u32(&mut ptr),
             size_dt_struct: DeviceTree::read_u32(&mut ptr),
         }
     }
