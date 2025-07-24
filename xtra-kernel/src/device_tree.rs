@@ -6,8 +6,6 @@
 
 use core::{ ptr, slice::from_raw_parts, str::from_utf8_unchecked };
 
-//use crate::uart::SimpleUart;
-
 
 
 // Make sure that the device tree is valid by checking its magic number.
@@ -24,6 +22,7 @@ pub fn validate_dtb(device_tree_ptr: *const u8) -> bool
 
     true
 }
+
 
 
 // The DeviceTree structure represents the device tree blob (DTB) header and provides methods to
@@ -48,12 +47,14 @@ pub struct DeviceTree
 }
 
 
+
 // Constants for the device tree structure markers.
 const BEGIN_NODE: u32 = 0x0000_0001;  // Begin node marker.
 const END_NODE: u32   = 0x0000_0002;  // End node marker.
 const PROPERTY: u32   = 0x0000_0003;  // Property marker.
 const NOP: u32        = 0x0000_0004;  // No operation marker.
 const END: u32        = 0x0000_0009;  // End marker.
+
 
 
 impl DeviceTree
@@ -94,77 +95,6 @@ impl DeviceTree
             value
         }
     }
-
-    // Print the device tree header information to the given UART.
-    /*pub fn print_tree(&self, uart: &Uart)
-    {
-        uart.put_str("Device Tree Header:\n");
-
-        Self::write_int(&uart, "  Version                            ", self.version);
-        Self::write_int(&uart, "  Last Compatible Version            ", self.last_comp_version);
-        Self::write_int(&uart, "  Total Size                         ", self.total_size);
-        Self::write_hex(&uart, "  Offset to Structure Block          ", self.off_dt_struct);
-        Self::write_hex(&uart, "  Offset to Strings Block            ", self.off_dt_strings);
-        Self::write_hex(&uart, "  Offset to Memory Reservation Block ", self.off_mem_res_map);
-        Self::write_int(&uart, "  Boot CPU ID (Physical)             ", self.boot_cpu_id_phys);
-        Self::write_int(&uart, "  Size of Strings Block              ", self.size_dt_strings);
-        Self::write_int(&uart, "  Size of Structure Block            ", self.size_dt_struct);
-
-        // Let's print the contents of the DTB, this will help us understand what devices are
-        // available in the system.
-        self.iterate_blocks(|offset, name|
-            {
-                // Print the block information.
-                uart.put_str("    Block: ");
-                uart.put_str(name);
-                uart.put_str("\n");
-
-                self.iterate_properties(offset, |prop_name, prop_value|
-                    {
-                        uart.put_str("      Property: ");
-                        uart.put_str(prop_name);
-                        uart.put_str(", value: ");
-
-                        if prop_value.is_empty()
-                        {
-                            uart.put_str("N/A");
-                        }
-                        else
-                        {
-                            uart.put_char(b'[');
-                            uart.put_int(prop_value.len());
-                            uart.put_str("] = ");
-                            uart.put_hex_bytes(prop_value, Some(8));
-                        }
-
-                        uart.put_str("\n");
-
-                        true
-                    });
-
-                true
-            });
-    }*/
-
-    // Write an integer field value to the UART with a name.
-    /*fn write_int(uart: &SimpleUart, name: &str, value: u32)
-    {
-        uart.put_str(name);
-        uart.put_str(": ");
-        uart.put_int(value as usize);
-        uart.put_str("\n");
-    }
-
-
-    // Write a hexadecimal field value to the UART with a name.
-    fn write_hex(uart: &SimpleUart, name: &str, value: u32)
-    {
-        uart.put_str(name);
-        uart.put_str(": ");
-        uart.put_hex(value as usize, true);
-        uart.put_str("\n");
-    }*/
-
 
     // Iterate through the device tree structure block, calling the callback for each found node.
     //
@@ -269,7 +199,6 @@ impl DeviceTree
             }
         }
     }
-
 
     pub fn iterate_properties<Func>(&self, base_offset: usize, mut callback: Func)
         where
@@ -385,7 +314,6 @@ impl DeviceTree
         }
     }
 
-
     // Move through the device tree structure block, making sure that we don't read past the end
     // of the data structure. Panic if we do.
     fn increment_offset(&self, offset: &mut usize, size: usize)
@@ -398,7 +326,6 @@ impl DeviceTree
             panic!("Attempted to read past the end of the device tree structure block.");
         }
     }
-
 
     // Create a string reference from the bytes in the device tree structure block at the given
     // pointer. The string is expected to be null-terminated.
