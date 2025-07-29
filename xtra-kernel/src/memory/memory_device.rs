@@ -32,6 +32,7 @@ const INVALID_MEM_BASE_ADDRESS: usize = usize::MAX;
 /// It can also be the storage location of boot firmware or even the kernel image itself.
 ///
 /// Usage of this device needs to be configured per system for the device it is running on.
+#[derive(Clone, Copy)]
 pub struct FlashDevice
 {
     pub bank_width: u32,      // The width of the flash bank in bytes. Ie you should write this many
@@ -149,6 +150,7 @@ impl Display for FlashDevice
 ///
 /// This is used by the kernel to properly manage what memory is actually available in the system
 /// and to ensure that the memory allocator does not allocate pages that do not exist in the system.
+#[derive(Clone, Copy)]
 pub struct MemoryDevice
 {
     pub base_address: usize,  // The base mapped address of the memory device in memory.
@@ -268,6 +270,7 @@ impl Display for MemoryDevice
 /// The kernel needs to know where memory mapped I/O devices are mapped in the device's physical
 /// address space. This way we can properly map them into the kernel's virtual address space
 /// and access them as needed.
+#[derive(Clone, Copy)]
 pub struct MmioRegion
 {
     pub base_address: usize,  // The base address of the MMIO region in memory.
@@ -316,6 +319,7 @@ impl Display for MmioRegion
 ///
 /// We can also in the future provide a special FLASH device in the system that can be used to
 /// read and write from the found FLASH device(s).
+#[derive(Clone, Copy)]
 pub struct SystemMemory
 {
     pub flash_devices: [Option<FlashDevice>; MAX_FLASH_DEVICES],  // The FLASH device(s).

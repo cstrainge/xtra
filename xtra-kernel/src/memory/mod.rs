@@ -9,7 +9,7 @@
 
 /// The size of a memory page as used on this system/architecture. This is typically 4KB on most
 /// systems, but can vary based on the architecture and configuration.
-const PAGE_SIZE: usize = 4096;  // Our memory is split into 4KB pages.
+pub const PAGE_SIZE: usize = 4096;  // Our memory is split into 4KB pages.
 
 
 

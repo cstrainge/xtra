@@ -39,7 +39,7 @@ macro_rules! read_csr
 // CSR number or the value being written. It is up to the caller to ensure we're writing to an
 // existing CSR and that the value is valid for that CSR.
 #[inline(always)]
-fn write_csr(csr: usize, value: u64)
+fn _write_csr(csr: usize, value: u64)
 {
     unsafe
     {
@@ -185,14 +185,14 @@ pub fn write_pmpaddr(index: usize, value: u64)
 
 // ---- Machine Counters/Timers --------------------------------------------------------------------
 
-pub fn read_cycle_counter() -> u64
+pub fn _read_cycle_counter() -> u64
 {
     read_csr!(CSR_MCYCLE)
 }
 
 
 
-pub fn read_instruction_counter() -> u64
+pub fn _read_instruction_counter() -> u64
 {
     read_csr!(CSR_MINSTRET)
 }

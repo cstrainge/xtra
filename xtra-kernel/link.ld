@@ -8,11 +8,24 @@ __num_harts = 4;           /* We support a maximum of 4 harts. */
 
 SECTIONS
 {
+    /*
+        The bootloader starts at this 0x80000000, and the kernel is loaded at 0x80500000 5MB after
+        that.
+
+        Once loaded and initialized, the kernel will repurpose that initial 5MB as it's heap.
+    */
+
+    . = 0x80000000;
+
+    _heap_start = .;
+
     . = 0x80500000;
+
+    _heap_end = .;
 
     _kernel_start = .;
 
-    .text :
+    .text : ALIGN(0x1000)
     {
         _text_start = .;
 
@@ -22,7 +35,9 @@ SECTIONS
         _text_end = .;
     }
 
-    .rodata :
+    . = ALIGN(0x1000);
+
+    .rodata : ALIGN(0x1000)
     {
         _rodata_start = .;
 
@@ -31,7 +46,9 @@ SECTIONS
         _rodata_end = .;
     }
 
-    .data :
+    . = ALIGN(0x1000);
+
+    .data : ALIGN(0x1000)
     {
         _data_start = .;
 
@@ -40,7 +57,9 @@ SECTIONS
         _data_end = .;
     }
 
-    .bss  :
+    . = ALIGN(0x1000);
+
+    .bss : ALIGN(0x1000)
     {
         _bss_start = .;
 
@@ -49,7 +68,9 @@ SECTIONS
         _bss_end = .;
     }
 
-    .stacks (NOLOAD) : ALIGN(16)
+    . = ALIGN(0x1000);
+
+    .stacks (NOLOAD) : ALIGN(0x1000)
     {
         PROVIDE(_stack_start = .);
         . = . + (__stack_size * __num_harts);

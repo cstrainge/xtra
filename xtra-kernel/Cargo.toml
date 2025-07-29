@@ -1,12 +1,25 @@
 
+# The Xtra Kernel itself.
+
 [package]
 name = "xtra-kernel"
 version = "0.0.0"
-edition = "2021"
+edition = "2024"
 authors = ["Chloë Strainge <nullptr.0@gmail.com>"]
 description = "The main kernel crate for xtra-os."
 license = "MIT"
 
 
-# [target.riscv64imac-unknown-none-elf]
-# rustflags = [ "-C", "relocation-model=pic", "-C", "link-arg=-pie" ]
+# These feature flags are used to tune the specific architecture of the system we are building for.
+# The features that are selected depend on the CPU being targeted by the build.
+[features]
+# By default we are compiling for RISC-V 64-bit systems with the sv39 page table format.
+default = [ "rv64s" ]
+
+# Features for RISC-V 64-bit systems.
+rv64s = [ "sv39" ]
+
+# Features to select the RISC-V page table format.  These are mutually exclusive.
+sv32 = []
+sv39 = []
+sv48 = []

@@ -77,7 +77,9 @@ impl FreeMemoryPage
         // writes to zero out the page. This is more efficient than writing byte by byte. Also many
         // systems don't allow misaligned writes so this avoids the compiler generating a lot of
         // extra code to simulate writing individual bytes.
-        let page_slice = from_raw_parts_mut(address as *mut usize, PAGE_SIZE / size_of::<usize>());
+
+        let page_slice = unsafe { from_raw_parts_mut(address as *mut usize,
+                                                     PAGE_SIZE / size_of::<usize>()) };
 
         for chunk in page_slice.iter_mut()
         {
@@ -88,7 +90,10 @@ impl FreeMemoryPage
         // FreeMemoryPage structure at that address.
         let page_ptr = address as FreeMemoryPagePtr;
 
-        *page_ptr = FreeMemoryPage { address, prev_page, next_page };
+        unsafe
+        {
+            *page_ptr = FreeMemoryPage { address, prev_page, next_page };
+        }
 
         // Return the pointer to the new page.
         page_ptr
@@ -702,11 +707,17 @@ static mut FREE_PAGE_LIST: FreePageList = FreePageList::new();
 pub fn init_free_page_list(kernel_memory: &KernelMemoryLayout,
                            system_memory: &SystemMemory)
 {
-    /// Check if the address is within the kernel memory range.
+    /// Check if the address is within the kernel memory range, or part of the heap that will be
+    /// used by the kernel later.
     fn is_kernel_page(address: usize, kernel_memory: &KernelMemoryLayout) -> bool
     {
-           address >= kernel_memory.kernel.start
-        && address <  kernel_memory.kernel.start + kernel_memory.kernel.size
+        (   address >= kernel_memory.kernel.start
+         && address <  kernel_memory.kernel.start + kernel_memory.kernel.size)
+
+        ||
+
+        (   address >= kernel_memory.heap.start
+         && address <  kernel_memory.heap.start + kernel_memory.heap.size)
     }
 
     // Check if the address is within a MMIO device range.
@@ -769,9 +780,9 @@ pub fn init_free_page_list(kernel_memory: &KernelMemoryLayout,
                     unsafe
                     {
                         let page_ptr = FreeMemoryPage::new(page_address, None, None);
-                        let free_page_list = &mut FREE_PAGE_LIST;
+                        let free_page_list = &raw mut FREE_PAGE_LIST;
 
-                        free_page_list.add_free_page_to_end(page_ptr);
+                        (*free_page_list).add_free_page_to_end(page_ptr);
                     }
                 }
             }
@@ -791,9 +802,9 @@ pub fn add_free_page(page_address: usize)
     unsafe
     {
         let page_ptr = FreeMemoryPage::new(page_address, None, None);
-        let free_page_list = &mut FREE_PAGE_LIST;
+        let free_page_list = &raw mut FREE_PAGE_LIST;
 
-        free_page_list.insert_page(page_ptr);
+        (*free_page_list).insert_page(page_ptr);
     }
 }
 
@@ -832,9 +843,9 @@ pub fn add_n_free_pages(address: usize, count: usize)
         }
 
         // Now we have our list of free pages, we can add it to the official free page list.
-        let free_page_list = &mut FREE_PAGE_LIST;
+        let free_page_list = &raw mut FREE_PAGE_LIST;
 
-        free_page_list.insert_page_list(free_page_head, current_page_ptr);
+        (*free_page_list).insert_page_list(free_page_head, current_page_ptr);
     }
 }
 
@@ -849,8 +860,8 @@ pub fn add_n_free_pages(address: usize, count: usize)
 pub fn remove_free_page() -> Option<usize>
 {
     // Get the free page list and attempt to remove a page from it.
-    let free_page_list = unsafe { &mut FREE_PAGE_LIST };
-    let page_ptr = free_page_list.remove_page();
+    let free_page_list = &raw mut FREE_PAGE_LIST;
+    let page_ptr = unsafe { (*free_page_list).remove_page() };
 
     // Check to see if we got a page pointer back.
     if let Some(page_ptr) = page_ptr
@@ -883,8 +894,8 @@ pub fn remove_free_page() -> Option<usize>
 pub fn remove_n_free_pages(count: usize) -> Option<usize>
 {
     // Ok, get a reference to the free list and try to extract the requested number of pages.
-    let free_page_list = unsafe { &mut FREE_PAGE_LIST };
-    let first_page_ptr = free_page_list.remove_page_list(count);
+    let free_page_list = &raw mut FREE_PAGE_LIST;
+    let first_page_ptr = unsafe { (*free_page_list).remove_page_list(count) };
 
     // Did we get a list of pages back?
     if first_page_ptr.is_some()

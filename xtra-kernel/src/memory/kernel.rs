@@ -7,6 +7,7 @@ use core::fmt::{ self, Display, Formatter };
 
 
 // Represents a section of memory in the kernel layout,
+#[derive(Copy, Clone)]
 pub struct SectionLayout
 {
     pub start: usize,  // Start address of the section.
@@ -16,8 +17,25 @@ pub struct SectionLayout
 
 
 
+impl SectionLayout
+{
+    /// Create a new zeroed section layout.
+    pub const fn zeroed() -> Self
+    {
+        SectionLayout
+            {
+                start: 0,
+                end: 0,
+                size: 0
+            }
+    }
+}
+
+
+
 // The layout of the kernel in RAM, this includes the kernel range, text, rodata, data, and bss
 // sections.
+#[derive(Copy, Clone)]
 pub struct KernelMemoryLayout
 {
     pub kernel: SectionLayout,  // The entire kernel range in RAM.
@@ -25,7 +43,8 @@ pub struct KernelMemoryLayout
     pub rodata: SectionLayout,  // The read-only data section of the kernel.
     pub data: SectionLayout,    // The initialized data section of the kernel.
     pub bss: SectionLayout,     // The uninitialized data section of the kernel.
-    pub stack: SectionLayout    // The stacks for each hart in the system.
+    pub stack: SectionLayout,   // The stacks for each hart in the system.
+    pub heap: SectionLayout     // Where the kernel's heap is located and its size.
 }
 
 
@@ -36,7 +55,7 @@ impl KernelMemoryLayout
     // the linker script and return a new `KernelMemoryLayout` instance.
     pub fn new() -> Self
     {
-        extern "C"
+        unsafe extern "C"
         {
             static _kernel_start: u8;
             static _kernel_end: u8;
@@ -50,6 +69,8 @@ impl KernelMemoryLayout
             static _bss_end: u8;
             static _stack_start: u8;
             static _stack_end: u8;
+            static _heap_start: u8;
+            static _heap_end: u8;
         }
 
         let kernel_start = unsafe { &_kernel_start as *const u8 as usize };
@@ -65,6 +86,8 @@ impl KernelMemoryLayout
         let bss_end = unsafe { &_bss_end as *const u8 as usize };
         let stack_start = unsafe { &_stack_start as *const u8 as usize };
         let stack_end = unsafe { &_stack_end as *const u8 as usize };
+        let heap_start = unsafe { &_heap_start as *const u8 as usize };
+        let heap_end = unsafe { &_heap_end as *const u8 as usize };
 
         KernelMemoryLayout
             {
@@ -114,7 +137,29 @@ impl KernelMemoryLayout
                         start: stack_start,
                         end: stack_end,
                         size: stack_end - stack_start
+                    },
+
+                heap:
+                    SectionLayout
+                    {
+                        start: heap_start,
+                        end: heap_end,
+                        size: heap_end - heap_start
                     }
+            }
+    }
+
+    pub const fn zeroed() -> Self
+    {
+        KernelMemoryLayout
+            {
+                kernel: SectionLayout::zeroed(),
+                text: SectionLayout::zeroed(),
+                rodata: SectionLayout::zeroed(),
+                data: SectionLayout::zeroed(),
+                bss: SectionLayout::zeroed(),
+                stack: SectionLayout::zeroed(),
+                heap: SectionLayout::zeroed()
             }
     }
 }

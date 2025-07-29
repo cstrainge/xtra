@@ -4,7 +4,9 @@
 
 #![no_std]
 #![no_main]
-#![feature(let_chains)]
+#![allow(unused)]
+//#![feature(let_chains)]
+#![feature(naked_functions_target_feature)]
 
 
 
@@ -86,6 +88,11 @@ const KERNEL_PROFILE: &str = env!("PROFILE");
 ///              change it in the linker script as well.
 const STACK_SIZE: usize = 0x1000;
 
+const _: () =
+    {
+        assert!(STACK_SIZE.is_power_of_two(), "The stack size must be a power of two.");
+    };
+
 /// Maximum number of cores we support in the system.
 ///
 /// TODO: Move this into arch and make it a configurable option in the kernel config file.
@@ -95,11 +102,13 @@ const STACK_SIZE: usize = 0x1000;
 ///              change it in the linker script as well.
 const MAX_CORES: usize = 4;
 
+
+
 /// Allocate the space for a stack for each core in the system.
 ///
 /// TODO: Move this into arch and make it a configurable option in the kernel config file.
-#[no_mangle]
-#[link_section = ".stacks"]
+#[unsafe(no_mangle)]
+#[unsafe(link_section = ".stacks")]
 static mut STACKS: [u8; STACK_SIZE * MAX_CORES] = [0; STACK_SIZE * MAX_CORES];
 
 
@@ -139,27 +148,34 @@ fn set_system_booted()
 /// transfer control to it.
 #[cfg(target_arch = "riscv64")]
 #[unsafe(naked)]
-#[no_mangle]
-#[link_section = ".text._start"]
+#[unsafe(no_mangle)]
+#[unsafe(link_section = ".text._start")]
 pub unsafe extern "C" fn _start() -> !
 {
+    // How much we need to shift to multiply the core index by the stack size.
+    const STACK_SHIFT: usize = STACK_SIZE.trailing_zeros() as usize;
+
     // This function is called system startup code. There is no Rust runtime available at this
     // point, so we cannot use any Rust features, we just setup the stack and then jump to the
     // proper main function.
     naked_asm!
     (
-        // a0 = hart_id, a1 = dtb_ptr
-        "la t0, STACKS",        // t0 = &STACKS.
-        "li t1, {stack_size}",  // t1 = STACK_SIZE.
-        "mul t2, a0, t1",       // t2 = hart_id * STACK_SIZE.
+        // a0 = hart_id
+        // a1 = dtb_ptr
 
-        "add t0, t0, t2",       // t0 = &STACKS[hart_id * STACK_SIZE].
-        "add t0, t0, t1",       // t0 = &STACKS[(hart_id+1)*STACK_SIZE].
-        "mv sp, t0",            // set sp to top of stack for this hart.
+        "la t0, STACKS",               // t0 = &STACKS.
+        "slli t1, a0, {stack_shift}",  // t1 = hart_id * STACK_SIZE.
 
-        "j main",               // hart_id and dtb are already in a0 and a1, so just call main.
+        "add t0, t0, t1",              // t0 = &STACKS[hart_id * STACK_SIZE].
+        "li t1, {stack_size}",         // t1 = STACK_SIZE.
+        "add t0, t0, t1",              // t0 = &STACKS[(hart_id+1)*STACK_SIZE] + STACK_SIZE.
 
-        stack_size = const STACK_SIZE
+        "mv sp, t0",                   // set sp to top of stack for this hart.
+
+        "j main",                      // main(hart_id, dtb)
+
+        stack_size = const STACK_SIZE,
+        stack_shift = const STACK_SHIFT
     );
 }
 
@@ -190,7 +206,7 @@ fn kernel_panic_handler(info: &PanicInfo) -> !
 
 /// The main entry point for the kernel, this function will never return.  Either it runs forever or
 /// a shutdown is initiated.
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn main(core_index: usize, device_tree_ptr: *const u8) -> !
 {
     // Make sure that we can support the number of cores we have in the system.

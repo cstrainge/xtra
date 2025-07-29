@@ -6,7 +6,7 @@
 // interrupts enabled.
 
 use crate::{ arch::device_tree::DeviceTree,
-             locking::{ LockGuard, Locking, spin_lock::SpinLock },
+             locking::spin_lock::SpinLock,
              uart::SimpleUart };
 
 
