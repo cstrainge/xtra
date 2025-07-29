@@ -124,11 +124,58 @@ impl PageTableEntry
         entry
     }
 
+    /// Change the state of a page table entry from invalid to valid but empty of any mappings.
+    pub fn set_valid(&mut self)
+    {
+        // Make sure we're in a proper state.
+        assert!(!self.is_valid(),
+                "Cannot set a page table entry as valid when it is already valid.");
+
+        // Set the valid bit and clear the reserved bits.
+        self.0 |= PTE_V;
+        self.0 &= !PTE_RESERVED;
+    }
+
     /// Is this page table entry valid?
     pub fn is_valid(&self) -> bool
     {
            (self.0 & PTE_V) != 0
         && (self.0 & PTE_RESERVED) == 0
+    }
+
+    /// Mark this page table entry as invalid.
+    pub fn set_invalid(&mut self)
+    {
+        // Check to see if this is an entry that points to a child page table. If it is we need to
+        // free that page table as well.
+        if self.is_page_table_ptr()
+        {
+            let page_table_ptr = self.get_table_address();
+            let page_address = page_table_ptr as usize;
+
+            unsafe
+            {
+                drop_in_place(page_table_ptr);
+            }
+
+            // Now free the memory that was allocated for the page table.
+            free_page(page_address);
+        }
+        else if    self.is_leaf()
+                && self.is_page_owned()
+                && self.get_physical_address() != 0
+        {
+            // This entry contains a mapped page of RAM, check to see if we own the page, if we do
+            // we can free it now.
+            //
+            // The reason for this check is that non-owned pages can be mapped into an address space
+            // by the kernel. For example, shared memory regions or other kernel-managed pages.
+            let physical_address = self.get_physical_address();
+            free_page(physical_address);
+        }
+
+        // Clear all bits, including the valid bit.
+        self.0 = 0;
     }
 
     /// Is the page table entry a pointer to another page table?
@@ -138,6 +185,31 @@ impl PageTableEntry
         && !self.is_readable()
         && !self.is_writable()
         && !self.is_executable()
+    }
+
+    /// Is the entry a leaf entry? Meaning it refers to a page of RAM instead of another page table.
+    pub fn is_leaf(&self) -> bool
+    {
+        self.is_valid() && !self.is_page_table_ptr()
+    }
+
+    /// Set this leaf entry as owning the page of RAM it refers to. This means when the page table
+    /// that owns this entry is dropped the page of RAM will be freed automatically.
+    pub fn set_page_owned(&mut self)
+    {
+        // This only makes sense for leaf entries.
+        assert!(self.is_leaf(),
+                "Cannot set page ownership on a page table entry that is not a leaf entry.");
+
+        // We use the software reserved bits to indicate ownership of the page.
+        self.0 |= (PTE_RSW & 1 << 8);
+    }
+
+    /// If the entry refers to a page, is the page owned by the table itself? If the page is owned
+    /// then the page will automatically be freed when the table itself is dropped.
+    pub fn is_page_owned(&self) -> bool
+    {
+        self.is_valid() && self.is_leaf() && ((self.0 & PTE_RSW) == 1)
     }
 
     /// Get the address of the page table this entry points to.
@@ -189,6 +261,7 @@ impl PageTableEntry
         self.0 |= (address << 10) & (PTE_PPN_2 | PTE_PPN_1 | PTE_PPN_0);
     }
 
+    /// Set the physical address of a page of RAM that this entry will refer to.
     pub fn set_physical_address(&mut self, physical_address: usize)
     {
         // Ensure the physical address is aligned to a page boundary.
@@ -211,6 +284,7 @@ impl PageTableEntry
         self.0 |= (ppn << 10) & (PTE_PPN_2 | PTE_PPN_1 | PTE_PPN_0);
     }
 
+    /// Get a page of RAM's physical address from this page table entry.
     pub fn get_physical_address(&self) -> usize
     {
         assert!(!self.is_page_table_ptr(),
@@ -222,21 +296,6 @@ impl PageTableEntry
 
         // Convert back to a physical address.
         (ppn as usize) << 12
-    }
-
-    /// Get the page table entry's physical page number.
-    pub fn get_ppn(&self, index: usize) -> usize
-    {
-        assert!(!self.is_page_table_ptr(),
-                "Cannot get PPN from a page table entry that is a pointer to another page table.");
-
-        match index
-        {
-            0 => ((self.0 & PTE_PPN_0) >> 10) as usize,
-            1 => ((self.0 & PTE_PPN_1) >> 19) as usize,
-            2 => ((self.0 & PTE_PPN_2) >> 28) as usize,
-            _ => panic!("Invalid PPN index {} for page table entry.", index)
-        }
     }
 
     /// Check to see if the page is dirty.
@@ -433,20 +492,6 @@ impl Drop for PageTableEntry
     /// properly free that sub-table as well.
     fn drop(&mut self)
     {
-        if self.is_page_table_ptr()
-        {
-            let page_table_ptr = self.get_table_address();
-            let page_address = page_table_ptr as usize;
-
-            unsafe
-            {
-                drop_in_place(page_table_ptr);
-            }
-
-            free_page(page_address);
-        }
-
-        // Ensure that the entry is cleared when dropped, to avoid accidental reuse.
-        self.0 = 0;
+        self.set_invalid();
     }
 }

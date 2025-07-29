@@ -5,14 +5,16 @@
 // tree. We use the simple UART implementation so that we can print from code executing  without
 // interrupts enabled.
 
+use core::fmt::{ self, Write };
+
 use crate::{ arch::device_tree::DeviceTree,
              locking::spin_lock::SpinLock,
              uart::SimpleUart };
 
 
 
-// Global reference to the UART device used for printing. This is initialized at boot time and
-// used throughout the kernel for logging output.
+/// Global reference to the UART device used for printing. This is initialized at boot time and
+/// used throughout the kernel for logging output.
 pub static mut PRINTING_UART: SimpleUart = SimpleUart::zeroed();
 
 
@@ -23,8 +25,72 @@ pub static PRINTING_LOCK: SpinLock = SpinLock::new();
 
 
 
-// Implement the standard print! macro for printing formatted output from the kernel to an attached
-// UART device.
+/// A simple writer that writes to a buffer. This is used to format strings using the `write!` macro
+/// using the stack instead of heap allocation. This is useful for formatting strings in the kernel
+/// without allocating memory on the heap.
+///
+/// There are many sections of code in the kernel that are used before the heap is initialized and
+/// thus cannot use the heap allocator.
+pub struct BufferWriter<'a>
+{
+    /// The buffer to write to. It is assumed that this buffer is either staticly allocated or
+    /// allocated on the stack.
+    buffer: &'a mut [u8],
+
+    /// The position of the last write to the buffer. This is used so that multiple writes to the
+    /// buffer can be done without overwriting previous writes.
+    position: usize
+}
+
+
+
+impl<'a> BufferWriter<'a>
+{
+    /// Create a new buffer writer that writes to the given buffer. The buffer must be at least 1
+    /// byte long.
+    pub fn new(buffer: &'a mut [u8]) -> Self
+    {
+        assert!(!buffer.is_empty(), "Buffer must be at least 1 byte long.");
+
+        BufferWriter { buffer, position: 0 }
+    }
+}
+
+
+
+impl<'a> Write for BufferWriter<'a>
+{
+    /// Write a string to the buffer. This is used to format strings using the `write!` macro.
+    ///
+    /// This implementation should always return `Ok(())` as we make sure that the write doesn't
+    /// exceed the buffer's length. For simplicity, we don't report if the buffer gets full.
+    fn write_str(&mut self, string: &str) -> fmt::Result
+    {
+        // Get access to the string's bytes and compute it's length, making sure that we don't write
+        // past the end of the buffer.
+        let bytes = string.as_bytes();
+        let length = bytes.len().min(self.buffer.len() - self.position);
+
+        // Copy the strings bytes into the buffer at the current position, then update the position
+        // based on the number of bytes written.
+        self.buffer[self.position..self.position + length].copy_from_slice(&bytes[..length]);
+        self.position += length;
+
+        /// TODO: If the buffer does overflow replace the last 3 characters with "..." to indicate
+        ///       that the string was truncated.
+        Ok(())
+    }
+
+    fn write_fmt(&mut self, args: fmt::Arguments<'_>) -> fmt::Result
+    {
+        fmt::write(self, args)
+    }
+}
+
+
+
+/// Implement the standard print! macro for printing formatted output from the kernel to an attached
+/// UART device.
 #[macro_export]
 macro_rules! print
 {

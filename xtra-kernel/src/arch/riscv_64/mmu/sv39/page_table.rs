@@ -4,12 +4,21 @@
 // This code specifically does not use the heap due to requirements of the RISC-V 64-bit
 // architecture and the fact that the page table is a fixed size structure that is always allocated
 // at page table aligned addresses.
+//
+// This implementation of the page table only supports allocating 4KB pages.
+//
+// This code also assumes that the physical pages of RAM have been allocated from the system's free
+// page pool and are available for use. It does not check to see if the RAM pointed to is valid.
+//
+// The page table also supports iterating over all the allocated pages in the page table, skipping
+// all invalid or empty entries in the page table(s).
 
-use core::{ mem::size_of };
+use core::{ fmt::Write, mem::size_of };
 
 use crate::{ arch::mmu::{ PAGE_SIZE,
                           sv39::{ page_table_entry::PageTableEntry,
                                   virtual_address::VirtualAddress } },
+             printing::BufferWriter,
              memory::{ mmu::{ page_box::PageBoxable, permissions::Permissions } } };
 
 
@@ -24,6 +33,27 @@ pub const PAGE_TABLE_SIZE: usize = 512;
 /// The maximum number of levels of indirection in a page table is 3, as defined by the RISC-V SV39
 /// specification.
 const MAX_TABLE_INDIRECTIONS: usize = 3;
+
+
+
+/// When mapping a page into a page table for an address space we need to specify how the page's
+/// memory should be managed.
+///
+/// Should the page table take ownership of the page and free it when the page table is dropped, or
+/// should the page be manually managed by the caller?
+///
+/// And example of this is mapping a shared page of memory into a second address space.
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub enum PageManagement
+{
+    /// The page is mapped into the address space and will be freed automatically when the page
+    /// table is dropped.
+    Automatic,
+
+    /// The page is mapped into the address space but will not be automatically freed when the
+    /// page table is dropped.
+    Manual
+}
 
 
 
@@ -262,15 +292,21 @@ impl PageTable
         PageTableIterator::new(self)
     }
 
-        fn map_page(&mut self,
-                virtual_address: usize,
-                physical_address: usize,
-                permissions: Permissions) -> Result<(), &'static str>
+
+    /// Map a physical page of RAM into an address space at the given virtual address.
+    pub fn map_page(&mut self,
+                    virtual_address: usize,
+                    physical_address: usize,
+                    permissions: Permissions,
+                    page_management: PageManagement) -> Result<(), &'static str>
     {
         unsafe
         {
+            // Convert the raw virtual address into a proper virtual address so that we can access
+            // it's fields.
             let virtual_address = VirtualAddress::new(virtual_address);
 
+            // Make sure that the virtual and physical addresses are aligned and non-zero.
             if    virtual_address.get_offset() != 0
                || physical_address % PAGE_SIZE != 0
                || physical_address == 0
@@ -279,11 +315,122 @@ impl PageTable
                             and physical address must be page aligned and non-zero.");
             }
 
-            // Look up the page table entry for the given virtual address.
-            let vpn2 = virtual_address.get_vpn(2);
-            let vpn1 = virtual_address.get_vpn(1);
-            let vpn0 = virtual_address.get_vpn(0);
+            // Look up the page table entry in the third level table.
+            let entry = &mut self.look_up_page_entry(&virtual_address)?;
 
+            // If the entry is already valid then this page has already been mapped so we return an
+            // error at this point.
+            if entry.is_valid()
+            {
+                // Format a string to let the caller know what went wrong. We use a buffer writer
+                // here because we can not safely use the heap in this code.
+                let mut buffer = [0u8; 128];
+                let mut writer = BufferWriter::new(&mut buffer);
+
+                write!(writer, "The page at virtual address {:#x} has already been mapped to \
+                               physical address {:#x}, attempting to re-map it to {:#x}.",
+                               *virtual_address,
+                               entry.get_physical_address(),
+                               physical_address)
+                    .unwrap();
+            }
+
+            // Reset the entry from being invalid to a leaf entry.
+            entry.set_valid();
+
+            // Make sure the last access bits are cleared.
+            entry.clear_accessed();
+            entry.clear_dirty();
+
+            // Translate the permission flags into the proper permission bits in the page table
+            // entry.
+            entry.set_global(permissions.globally_accessible);
+            entry.set_user_accessible(permissions.user_accessible);
+            entry.set_readable(permissions.readable);
+            entry.set_writable(permissions.writable);
+            entry.set_executable(permissions.executable);
+
+            // If we were requested to take on management of the page's memory then we need to flag
+            // the entry as owning its page.
+            if page_management == PageManagement::Automatic
+            {
+                entry.set_page_owned();
+            }
+
+            // Finally set the page's physical address in the page table entry.
+            entry.set_physical_address(physical_address);
+        }
+
+        Ok(())
+    }
+
+    /// Forcibly unmap a page from the page table at the given virtual address.
+    pub fn unmap_page(&mut self, virtual_address: usize) -> Result<(), &'static str>
+    {
+        // Convert the raw virtual address into a proper virtual address so that we can access
+        // it's fields.
+        let virtual_address = VirtualAddress::new(virtual_address);
+
+        // Make sure that the virtual and physical addresses are aligned and non-zero.
+        if virtual_address.get_offset() != 0
+        {
+            return Err("Virtual address must be page aligned and non-zero, \
+                        and physical address must be page aligned and non-zero.");
+        }
+
+        // Look up the page table entry in the third level table.
+        let entry = self.look_up_page_entry(&virtual_address)?;
+
+        // Set the entry to be invalid which will also clear the physical address and permissions.
+        // This will automatically free any associated memory as needed.
+        entry.set_invalid();
+
+        // All done.
+        Ok(())
+    }
+
+    /// Attempt to look up the physical address for a given virtual address in the page table.
+    ///
+    /// Will return an error if the virtual address is not mapped in the page table, or if the
+    /// page table entry is not a leaf entry.
+    pub fn get_physical_address(&mut self, virtual_address: usize) -> Result<usize, &'static str>
+    {
+        // Convert the raw virtual address into a proper virtual address so that we can access
+        // it's fields.
+        let virtual_address = VirtualAddress::new(virtual_address);
+
+        // Look up the page table entry in the third level table.
+        let entry = &mut self.look_up_page_entry(&virtual_address)?;
+
+        // Make sure that the entry refers to a physical address.
+        if !entry.is_leaf()
+        {
+            return Err("The page table entry is not a leaf entry, it is a page table pointer.");
+        }
+
+        // Ok, translate the virtual address to the physical address.
+        let base_physical_address = entry.get_physical_address();
+
+        Ok(base_physical_address + virtual_address.get_offset())
+    }
+
+    /// Given a virtual address look up a page table entry for that address.
+    ///
+    /// There may or may not be a page of RAM mapped by that entry.
+    fn look_up_page_entry(&mut self,
+                          virtual_address: &VirtualAddress)
+                          -> Result<&'static mut PageTableEntry, &'static str>
+    {
+        // Look up the page table entry for the given virtual address. This is a three level lookup
+        // because we only support allocating 4k pages. In other implementations of the page table
+        // we could support larger pages, and in that case we'd need to check to see if the search
+        // should stop at a higher order page table.
+        let vpn2 = virtual_address.get_vpn(2);
+        let vpn1 = virtual_address.get_vpn(1);
+        let vpn0 = virtual_address.get_vpn(0);
+
+        unsafe
+        {
             // Get the second level page table.
             let second_level_table = if self.entries[vpn2].is_valid()
                 {
@@ -317,40 +464,8 @@ impl PageTable
                 };
 
             // Look up the page table entry in the third level table.
-            let entry = &mut (*third_level_table).entries[vpn0];
-
-            assert!(!entry.is_valid(),
-                    "The page at virtual address {} is already mapped.",
-                    *virtual_address);
-
-            *entry = PageTableEntry::new();
-
-            entry.clear_accessed();
-            entry.clear_dirty();
-
-            entry.set_global(permissions.globally_accessible);
-            entry.set_user_accessible(permissions.user_accessible);
-            entry.set_readable(permissions.readable);
-            entry.set_writable(permissions.writable);
-            entry.set_executable(permissions.executable);
-
-            entry.set_physical_address(physical_address);
+            Ok(&mut (*third_level_table).entries[vpn0])
         }
-
-        Ok(())
-    }
-
-    fn unmap_page(&mut self, virtual_address: usize) -> Result<(), &'static str>
-    {
-        let _virtual_address = VirtualAddress::new(virtual_address);
-        Err("Not implemented yet.")
-    }
-
-    fn get_physical_address(&self, virtual_address: usize) -> Result<usize, &'static str>
-    {
-        let _virtual_address = VirtualAddress::new(virtual_address);
-
-        Err("Not implemented yet.")
     }
 }
 
