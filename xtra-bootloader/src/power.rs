@@ -49,10 +49,13 @@ pub unsafe fn wait_for_interrupt() -> !
 {
     loop
     {
-        asm!
-        (
-            "wfi",
-            options(nomem, nostack, preserves_flags)
-        );
+        unsafe
+        {
+            asm!
+            (
+                "wfi",
+                options(nomem, nostack, preserves_flags)
+            );
+        }
     }
 }

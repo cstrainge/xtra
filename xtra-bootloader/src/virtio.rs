@@ -22,13 +22,19 @@ impl<const OFFSET: usize> MmioRegister<OFFSET>
     #[inline(always)]
     pub unsafe fn read(&self) -> u32
     {
-        read_volatile(self.0)
+        unsafe
+        {
+            read_volatile(self.0)
+        }
     }
 
     #[inline(always)]
     pub unsafe fn write(&self, value: u32)
     {
-        write_volatile(self.0, value);
+        unsafe
+        {
+            write_volatile(self.0, value);
+        }
     }
 }
 

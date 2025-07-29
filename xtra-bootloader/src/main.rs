@@ -43,7 +43,7 @@
 #![no_std]
 #![no_main]
 #![allow(unused)]
-#![feature(let_chains)]
+//#![feature(let_chains)]
 
 
 
@@ -95,8 +95,8 @@ const KERNEL_LOAD_ADDRESS: usize = 0x8050_0000;   // We are using 5MB after the 
 // If any errors occur in the bootloader we will power off the system. So even in the case of a
 // panic, we will not return from the main function.
 #[unsafe(naked)]
-#[no_mangle]
-#[link_section = ".text._start"]
+#[unsafe(no_mangle)]
+#[unsafe(link_section = ".text._start")]
 pub unsafe extern "C" fn _start()
 {
     // This function is called system startup code. There is no Rust runtime available at this
@@ -197,7 +197,7 @@ fn validate_device_tree(uart: &uart::Uart, device_tree_ptr: *const u8)
 //
 // In fact it is expected that this bootloader code will be overwritten later by normal OS
 // operation.
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn main(hart_id: usize, device_tree_ptr: *const u8) -> !
 {
     // Check to make sure that we are running on the boot hart (hart_id 0).
