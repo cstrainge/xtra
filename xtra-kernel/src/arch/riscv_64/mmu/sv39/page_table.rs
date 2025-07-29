@@ -322,17 +322,7 @@ impl PageTable
             // error at this point.
             if entry.is_valid()
             {
-                // Format a string to let the caller know what went wrong. We use a buffer writer
-                // here because we can not safely use the heap in this code.
-                let mut buffer = [0u8; 128];
-                let mut writer = BufferWriter::new(&mut buffer);
-
-                write!(writer, "The page at virtual address {:#x} has already been mapped to \
-                               physical address {:#x}, attempting to re-map it to {:#x}.",
-                               *virtual_address,
-                               entry.get_physical_address(),
-                               physical_address)
-                    .unwrap();
+                return Err("The page has already been mapped.");
             }
 
             // Reset the entry from being invalid to a leaf entry.
@@ -419,7 +409,7 @@ impl PageTable
     /// There may or may not be a page of RAM mapped by that entry.
     fn look_up_page_entry(&mut self,
                           virtual_address: &VirtualAddress)
-                          -> Result<&'static mut PageTableEntry, &'static str>
+                          -> Result<&mut PageTableEntry, &'static str>
     {
         // Look up the page table entry for the given virtual address. This is a three level lookup
         // because we only support allocating 4k pages. In other implementations of the page table
