@@ -6,9 +6,11 @@
 // The address space also makes use of the higher level primitives provided by the MMU module to
 // manage the pages of free memory in the system.
 
-use crate::{ arch::mmu::page_table::PageTable,
-             locking::spin_lock::SpinLock,
-             memory::{ mmu::{ get_kernel_memory_layout,
+use crate::{ arch::mmu::page_table::{ PageManagement, PageTable },
+             locking::{ LockGuard, spin_lock::SpinLock },
+             memory::{ mmu::{ allocate_page,
+                              free_page,
+                              get_kernel_memory_layout,
                               get_system_memory_layout,
                               page_box::PageBox,
                               permissions::Permissions },
@@ -39,6 +41,9 @@ impl AddressSpace
     {
         /// Break up a range of physical memory into pages and map them into the address space with
         /// the given permissions.
+        ///
+        /// These are unmanaged pages, that is they are not allocated from the free page list but
+        /// are special pages that are owned by the kernel itself.
         fn add_range(address_space: &mut AddressSpace,
                      physical_address: usize,
                      physical_range: usize,
@@ -49,8 +54,11 @@ impl AddressSpace
 
             for page_address in (base_address..end_address).step_by(PAGE_SIZE)
             {
-                address_space.map_page(page_address, page_address, permissions)
-                             .expect("Failed to map page into address space.");
+                address_space.page_table.map_page(page_address,
+                                                  page_address,
+                                                  permissions,
+                                                  PageManagement::Manual)
+                                        .expect("Failed to map page into address space.");
             }
         }
 
@@ -169,43 +177,116 @@ impl AddressSpace
     /// This will either allocate and map the page or return an error if the page could not be
     /// allocated or mapped for some reason.
     pub fn allocate_page(&mut self,
-                         _virtual_address: usize,
-                         _permissions: Permissions) -> Result<usize, &'static str>
+                         virtual_address: usize,
+                         permissions: Permissions) -> Result<(), &'static str>
     {
-        Err("Unimplemented: allocate_page in AddressSpace.")
+        // Attempt to allocate a page of memory from the free page list. The free page list
+        // maintains its own lock so we don't need to lock the address space yet.
+        let page = allocate_page()
+            .ok_or("Failed to allocate a page of memory from the free page list.")?;
+
+        // Lock this address space
+        let _guard = LockGuard::new(&self.lock);
+
+        // Try to map the page into the address space at the given virtual address with the
+        // given permissions. Mark the page as automatically managed so that it will be freed
+        // back to the free page list when it is unmapped.
+        let result = self.page_table
+                         .map_page(virtual_address, page, permissions, PageManagement::Automatic);
+
+        // If the mapping failed then we need to free the page back to the free page list so that
+        // we don't leak the page.
+        if result.is_err()
+        {
+            free_page(page);
+
+            return Err("Failed to map page into address space.");
+        }
+
+        Ok(())
     }
 
     /// Free a page of memory at the given virtual address and return it back to the free page list.
     ///
     /// This will fail if the page at the given virtual address is not mapped.
-    pub fn free_page(&mut self, _virtual_address: usize) -> Result<(), &'static str>
+    pub fn free_page(&mut self, virtual_address: usize) -> Result<(), &'static str>
     {
-        // Unmap the page at the given virtual address and free it back to the kernel's memory manager.
-        Err("Unimplemented: free_page in AddressSpace.")
+        // Try to unmap the page at the given virtual address. This will return the physical address
+        // of the page if it isn't managed by the page table.
+        let page =
+            {
+                // Lock the address space to ensure that we don't have multiple threads trying to
+                // manage pages at the same time.
+                let _guard = LockGuard::new(&self.lock);
+
+                self.page_table.unmap_page(virtual_address)?
+            };
+
+        // Check if the page was owned by the page table.
+        if let Some(page) = page
+        {
+            // If the page wasn't owned by the page table then need to free it now. The free page
+            // list has it's own lock so we don't need to lock the address space again.
+            free_page(page);
+        }
+
+        Ok(())
     }
 
     /// Map a specific page of memory into an address space at the given virtual address. It is
     /// assumed that the page is already allocated and is not part of the free page list.
     pub fn map_page(&mut self,
-                    _virtual_address: usize,
-                    _physical_address: usize,
-                    _permissions: Permissions) -> Result<(), &'static str>
+                    virtual_address: usize,
+                    physical_address: usize,
+                    permissions: Permissions) -> Result<(), &'static str>
     {
-        Err("Unimplemented: map_page in AddressSpace.")
+        // Lock the address space to ensure that we don't have multiple threads trying to manage
+        // pages at the same time.
+        let _guard = LockGuard::new(&self.lock);
+
+        // Attempt to map the page into the address space at the given virtual address with the
+        // given permissions. Mark the page as manually managed so that it will not be freed back
+        // to the free page list when it is unmapped.
+        self.page_table.map_page(virtual_address,
+                                 physical_address,
+                                 permissions,
+                                 PageManagement::Manual)
+                       .map_err(|_| "Failed to map page into address space.")
     }
+
 
     /// Unmap a page of memory at the given virtual address. This will remove the mapping from the
     /// address space. The free page list will remain untouched.
-    pub fn unmap_page(&mut self, _virtual_address: usize) -> Result<(), &'static str>
+    pub fn unmap_page(&mut self, virtual_address: usize) -> Result<usize, &'static str>
     {
-        Err("Unimplemented: unmap_page in AddressSpace.")
+        // Lock the address space to ensure that we don't have multiple threads trying to manage
+        // pages at the same time.
+        let _guard = LockGuard::new(&self.lock);
+
+        let page = self.page_table.unmap_page(virtual_address)?;
+
+        // If we didn't get an address back then the page was owned by the page table.
+        assert!(page.is_some(),
+                "The page at virtual address {} was not managed by the page table.",
+                virtual_address);
+
+        // Return the physical address of the page that was unmapped.
+        Ok(page.unwrap())
     }
 
     /// Given a virtual address find the physical address that the virtual address represents.
     ///
     /// Will return an error if the virtual address is not mapped in the address space.
-    pub fn get_physical_address(&self, _virtual_address: usize) -> Result<usize, &'static str>
+    pub fn get_physical_address(&self, virtual_address: usize) -> Result<usize, &'static str>
     {
-        Err("Unimplemented: get_physical_address in AddressSpace.")
+        // Lock the address space to ensure that we don't have multiple threads trying to manage
+        // pages at the same time.
+        let _guard = LockGuard::new(&self.lock);
+
+        // Attempt to look up the physical address for the given virtual address in the page table.
+        let physical_address = self.page_table.get_physical_address(virtual_address)?;
+
+        // Return the physical address that the virtual address represents.
+        Ok(physical_address)
     }
 }

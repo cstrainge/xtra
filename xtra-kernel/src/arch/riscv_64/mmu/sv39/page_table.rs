@@ -316,7 +316,7 @@ impl PageTable
             }
 
             // Look up the page table entry in the third level table.
-            let entry = &mut self.look_up_page_entry(&virtual_address)?;
+            let entry = &mut self.look_up_page_entry_mut(&virtual_address)?;
 
             // If the entry is already valid then this page has already been mapped so we return an
             // error at this point.
@@ -355,7 +355,7 @@ impl PageTable
     }
 
     /// Forcibly unmap a page from the page table at the given virtual address.
-    pub fn unmap_page(&mut self, virtual_address: usize) -> Result<(), &'static str>
+    pub fn unmap_page(&mut self, virtual_address: usize) -> Result<Option<usize>, &'static str>
     {
         // Convert the raw virtual address into a proper virtual address so that we can access
         // it's fields.
@@ -369,28 +369,39 @@ impl PageTable
         }
 
         // Look up the page table entry in the third level table.
-        let entry = self.look_up_page_entry(&virtual_address)?;
+        let entry = self.look_up_page_entry_mut(&virtual_address)?;
+
+        // If the page isn't owned by the page table, we don't free it, but we can return it's
+        // address.
+        let freed_page = if entry.is_page_owned()
+            {
+                None
+            }
+            else
+            {
+                Some(entry.get_physical_address())
+            };
 
         // Set the entry to be invalid which will also clear the physical address and permissions.
         // This will automatically free any associated memory as needed.
         entry.set_invalid();
 
-        // All done.
-        Ok(())
+        // All done, return the freed page if it wasn't owned by the page table.
+        Ok(freed_page)
     }
 
     /// Attempt to look up the physical address for a given virtual address in the page table.
     ///
     /// Will return an error if the virtual address is not mapped in the page table, or if the
     /// page table entry is not a leaf entry.
-    pub fn get_physical_address(&mut self, virtual_address: usize) -> Result<usize, &'static str>
+    pub fn get_physical_address(&self, virtual_address: usize) -> Result<usize, &'static str>
     {
         // Convert the raw virtual address into a proper virtual address so that we can access
         // it's fields.
         let virtual_address = VirtualAddress::new(virtual_address);
 
         // Look up the page table entry in the third level table.
-        let entry = &mut self.look_up_page_entry(&virtual_address)?;
+        let entry = self.look_up_page_entry(&virtual_address)?;
 
         // Make sure that the entry refers to a physical address.
         if !entry.is_leaf()
@@ -407,9 +418,9 @@ impl PageTable
     /// Given a virtual address look up a page table entry for that address.
     ///
     /// There may or may not be a page of RAM mapped by that entry.
-    fn look_up_page_entry(&mut self,
-                          virtual_address: &VirtualAddress)
-                          -> Result<&mut PageTableEntry, &'static str>
+    fn look_up_page_entry_mut(&mut self,
+                              virtual_address: &VirtualAddress)
+                              -> Result<&mut PageTableEntry, &'static str>
     {
         // Look up the page table entry for the given virtual address. This is a three level lookup
         // because we only support allocating 4k pages. In other implementations of the page table
@@ -455,6 +466,58 @@ impl PageTable
 
             // Look up the page table entry in the third level table.
             Ok(&mut (*third_level_table).entries[vpn0])
+        }
+    }
+
+    /// Given a virtual address look up a page table entry for that address.
+    ///
+    /// There may or may not be a page of RAM mapped by that entry.
+    fn look_up_page_entry(&self,
+                          virtual_address: &VirtualAddress)
+                          -> Result<&PageTableEntry, &'static str>
+    {
+        // Look up the page table entry for the given virtual address. This is a three level lookup
+        // because we only support allocating 4k pages. In other implementations of the page table
+        // we could support larger pages, and in that case we'd need to check to see if the search
+        // should stop at a higher order page table.
+        let vpn2 = virtual_address.get_vpn(2);
+        let vpn1 = virtual_address.get_vpn(1);
+        let vpn0 = virtual_address.get_vpn(0);
+
+        unsafe
+        {
+            // Get the second level page table.
+            let second_level_table = if self.entries[vpn2].is_valid()
+                {
+                    if !self.entries[vpn2].is_page_table_ptr()
+                    {
+                        return Err("The entry at VPN[2] must be a page table pointer.");
+                    }
+
+                    self.entries[vpn2].get_table_address()
+                }
+                else
+                {
+                    return Err("The entry at VPN[2] is not a valid page table pointer.");
+                };
+
+            // Look up the third level table from the second level table.
+            let third_level_table = if (*second_level_table).entries[vpn1].is_valid()
+                {
+                    if !(*second_level_table).entries[vpn1].is_page_table_ptr()
+                    {
+                        return Err("The entry at VPN[1] must be a page table pointer.");
+                    }
+
+                    (*second_level_table).entries[vpn1].get_table_address()
+                }
+                else
+                {
+                    return Err("The entry at VPN[1] is not a valid page table pointer.");
+                };
+
+            // Look up the page table entry in the third level table.
+            Ok(&(*third_level_table).entries[vpn0])
         }
     }
 }
