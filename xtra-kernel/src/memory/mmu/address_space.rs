@@ -251,9 +251,7 @@ impl AddressSpace
                                  physical_address,
                                  permissions,
                                  PageManagement::Manual)
-                       .map_err(|_| "Failed to map page into address space.")
     }
-
 
     /// Unmap a page of memory at the given virtual address. This will remove the mapping from the
     /// address space. The free page list will remain untouched.
