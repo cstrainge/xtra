@@ -6,14 +6,16 @@
 // The address space also makes use of the higher level primitives provided by the MMU module to
 // manage the pages of free memory in the system.
 
-use crate::{ arch::mmu::page_table::{ PageManagement, PageTable },
+use crate::{ arch::mmu::{ page_table::{ PageManagement, PageTable } },
              locking::{ LockGuard, spin_lock::SpinLock },
              memory::{ mmu::{ allocate_page,
                               free_page,
                               get_kernel_memory_layout,
                               get_system_memory_layout,
                               page_box::PageBox,
-                              permissions::Permissions },
+                              permissions::Permissions,
+                              physical_to_virtual_physical,
+                              VIRTUAL_BASE_OFFSET },
                      PAGE_SIZE } };
 
 
@@ -47,18 +49,30 @@ impl AddressSpace
         fn add_range(address_space: &mut AddressSpace,
                      physical_address: usize,
                      physical_range: usize,
-                     permissions: Permissions)
+                     permissions: Permissions,
+                     virtualize_address: bool)
         {
             let base_address = physical_address;
             let end_address = physical_address + physical_range;
 
             for page_address in (base_address..end_address).step_by(PAGE_SIZE)
             {
-                address_space.page_table.map_page(page_address,
+                let virtual_address =
+                    if virtualize_address
+                    {
+                        // If we are virtualizing the address then we need to add the base offset to
+                        VIRTUAL_BASE_OFFSET + page_address
+                    }
+                    else
+                    {
+                        page_address
+                    };
+
+                address_space.page_table.map_page(virtual_address,
                                                   page_address,
                                                   permissions,
                                                   PageManagement::Manual)
-                                        .expect("Failed to map page into address space.");
+                                        .expect("Failed to map page into address space");
             }
         }
 
@@ -84,7 +98,8 @@ impl AddressSpace
                           device.range,
                           Permissions::builder().readable()
                                                 .globally_accessible()
-                                                .build());
+                                                .build(),
+                          false);
             }
         }
 
@@ -100,7 +115,8 @@ impl AddressSpace
                           Permissions::builder().readable()
                                                 .writable()
                                                 .globally_accessible()
-                                                .build());
+                                                .build(),
+                          false);
             }
         }
 
@@ -114,7 +130,8 @@ impl AddressSpace
                   Permissions::builder().readable()
                                         .executable()
                                         .globally_accessible()
-                                        .build());
+                                        .build(),
+                  false);
 
         // Map the kernel's read-only data section.
         add_range(&mut address_space,
@@ -122,7 +139,8 @@ impl AddressSpace
                   kernel_memory.rodata.size,
                   Permissions::builder().readable()
                                         .globally_accessible()
-                                        .build());
+                                        .build(),
+                  false);
 
         // Map the kernel's data section.
         add_range(&mut address_space,
@@ -131,7 +149,8 @@ impl AddressSpace
                   Permissions::builder().readable()
                                         .writable()
                                         .globally_accessible()
-                                        .build());
+                                        .build(),
+                  false);
 
         // Map the kernel's bss section.
         add_range(&mut address_space,
@@ -140,7 +159,8 @@ impl AddressSpace
                   Permissions::builder().readable()
                                         .writable()
                                         .globally_accessible()
-                                        .build());
+                                        .build(),
+                  false);
 
         // Map the kernel's stack section.
         add_range(&mut address_space,
@@ -149,7 +169,8 @@ impl AddressSpace
                   Permissions::builder().readable()
                                         .writable()
                                         .globally_accessible()
-                                        .build());
+                                        .build(),
+                  false);
 
         // Map the kernel's heap.
         add_range(&mut address_space,
@@ -158,7 +179,25 @@ impl AddressSpace
                   Permissions::builder().readable()
                                         .writable()
                                         .globally_accessible()
-                                        .build());
+                                        .build(),
+                  false);
+
+        // Map the kernel's virtual memory area. All physical pages of RAM will be mapped here so
+        // that the kernel can access them directly.
+        for device in get_system_memory_layout().memory_devices
+        {
+            if let Some(device) = device
+            {
+                add_range(&mut address_space,
+                          device.base_address,
+                          device.range,
+                          Permissions::builder().readable()
+                                                .writable()
+                                                .globally_accessible()
+                                                .build(),
+                          true);
+            }
+        }
 
         // Now that we have the common regions of memory mapped out we can leave the rest of the
         // address space as free pages.

@@ -23,6 +23,11 @@ use crate::{ arch::mmu::{ PAGE_SIZE,
 
 
 
+/// Reexport the PageManagement enum so that it can be used by users of the PageTable.
+pub use crate::arch::mmu::sv39::page_table_entry::PageManagement;
+
+
+
 /// The maximum number of entries in a page table is 512, as defined by the RISC-V SV39
 /// specification. Each entry is 8 bytes, so the total size of a page table is
 /// 512 * 8 = 4096 bytes (4KB), which is the standard page size for RISC-V 64-bit systems.
@@ -33,27 +38,6 @@ pub const PAGE_TABLE_SIZE: usize = 512;
 /// The maximum number of levels of indirection in a page table is 3, as defined by the RISC-V SV39
 /// specification.
 const MAX_TABLE_INDIRECTIONS: usize = 3;
-
-
-
-/// When mapping a page into a page table for an address space we need to specify how the page's
-/// memory should be managed.
-///
-/// Should the page table take ownership of the page and free it when the page table is dropped, or
-/// should the page be manually managed by the caller?
-///
-/// And example of this is mapping a shared page of memory into a second address space.
-#[derive(Clone, Copy, PartialEq, Eq)]
-pub enum PageManagement
-{
-    /// The page is mapped into the address space and will be freed automatically when the page
-    /// table is dropped.
-    Automatic,
-
-    /// The page is mapped into the address space but will not be automatically freed when the
-    /// page table is dropped.
-    Manual
-}
 
 
 
@@ -280,7 +264,9 @@ impl PageTable
 
         for entry in unsafe { &mut (*page_table).entries }
         {
-            *entry = PageTableEntry::new_invalid();
+            let address = entry as *const PageTableEntry as usize;
+            let new_value = PageTableEntry::new_invalid();
+            *entry = new_value;
         }
 
         page_table
@@ -307,12 +293,15 @@ impl PageTable
             let virtual_address = VirtualAddress::new(virtual_address);
 
             // Make sure that the virtual and physical addresses are aligned and non-zero.
-            if    virtual_address.get_offset() != 0
-               || physical_address % PAGE_SIZE != 0
+            if virtual_address.get_offset() != 0
+            {
+                return Err("Virtual address must be page aligned.");
+            }
+
+            if    physical_address % PAGE_SIZE != 0
                || physical_address == 0
             {
-                return Err("Virtual address must be page aligned and non-zero, \
-                            and physical address must be page aligned and non-zero.");
+                return Err("Physical address must be page aligned and non-zero.");
             }
 
             // Look up the page table entry in the third level table.
@@ -339,13 +328,7 @@ impl PageTable
             entry.set_readable(permissions.readable);
             entry.set_writable(permissions.writable);
             entry.set_executable(permissions.executable);
-
-            // If we were requested to take on management of the page's memory then we need to flag
-            // the entry as owning its page.
-            if page_management == PageManagement::Automatic
-            {
-                entry.set_page_owned();
-            }
+            entry.set_page_management(page_management);
 
             // Finally set the page's physical address in the page table entry.
             entry.set_physical_address(physical_address);
@@ -355,6 +338,13 @@ impl PageTable
     }
 
     /// Forcibly unmap a page from the page table at the given virtual address.
+    ///
+    /// If the pointed to page was manually managed then we will return the physical address of
+    /// the page that was unmapped, otherwise we will return `None` to indicate that the page was
+    /// automatically managed and we do not return the physical address.
+    ///
+    /// If the page was CopyOnWrite then we will not return the physical address either because it
+    /// is assumed that the page is owned by another process.
     pub fn unmap_page(&mut self, virtual_address: usize) -> Result<Option<usize>, &'static str>
     {
         // Convert the raw virtual address into a proper virtual address so that we can access
@@ -364,8 +354,7 @@ impl PageTable
         // Make sure that the virtual and physical addresses are aligned and non-zero.
         if virtual_address.get_offset() != 0
         {
-            return Err("Virtual address must be page aligned and non-zero, \
-                        and physical address must be page aligned and non-zero.");
+            return Err("Virtual address must be page aligned and non-zero.");
         }
 
         // Look up the page table entry in the third level table.
@@ -373,13 +362,12 @@ impl PageTable
 
         // If the page isn't owned by the page table, we don't free it, but we can return it's
         // address.
-        let freed_page = if entry.is_page_owned()
+        let freed_page = match entry.get_page_management()
             {
-                None
-            }
-            else
-            {
-                Some(entry.get_physical_address())
+                PageManagement::Manual      => Some(entry.get_physical_address()),
+                PageManagement::Automatic   => None,
+                PageManagement::CopyOnWrite => None,
+                PageManagement::CowOwner    => None
             };
 
         // Set the entry to be invalid which will also clear the physical address and permissions.
@@ -450,7 +438,7 @@ impl PageTable
 
             // Look up the third level table from the second level table.
             let third_level_table = if (*second_level_table).entries[vpn1].is_valid()
-                {
+            {
                     if !(*second_level_table).entries[vpn1].is_page_table_ptr()
                     {
                         return Err("The entry at VPN[1] must be a page table pointer.");

@@ -58,8 +58,10 @@ impl VirtualAddress
     pub fn new(address: usize) -> Self
     {
         assert!((address & (PTA_RESERVED as usize)) == 0,
-                "A virtual address must not have reserved bits set. Address: {:#x}",
-                address);
+                "A virtual address must not have reserved bits set. Address: {:#x} \
+                Reserved bits: {:#x}",
+                address,
+                PTA_RESERVED as usize);
 
         Self(address)
     }

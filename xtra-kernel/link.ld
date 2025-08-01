@@ -8,20 +8,7 @@ __num_harts = 4;           /* We support a maximum of 4 harts. */
 
 SECTIONS
 {
-    /*
-        The bootloader starts at this 0x80000000, and the kernel is loaded at 0x80500000 5MB after
-        that.
-
-        Once loaded and initialized, the kernel will repurpose that initial 5MB as it's heap.
-    */
-
     . = 0x80000000;
-
-    _heap_start = .;
-
-    . = 0x80500000;
-
-    _heap_end = .;
 
     _kernel_start = .;
 
@@ -77,10 +64,19 @@ SECTIONS
         PROVIDE(_stack_end = .);
     }
 
+    . = ALIGN(0x1000);
+
     _kernel_end = .;
+
+    _heap_start = .;
+
+    . += 0x500000;
+
+    _heap_end = .;
+
 
     /DISCARD/ :
     {
-        *(.eh_frame .comment)
+        *(.eh_frame)
     }
 }

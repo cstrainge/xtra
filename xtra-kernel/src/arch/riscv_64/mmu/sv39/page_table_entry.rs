@@ -1,11 +1,39 @@
 
 // Definition of the page table entry (PTE) as defined under the sv39 page table format
 // specification.
-
 use core::{ ops::{ Deref, Drop }, ptr::drop_in_place };
 
 use crate::{ arch::mmu::{ PAGE_SIZE, sv39::{ page_table::PageTable } },
              memory::{ mmu::{ allocate_page, free_page } } };
+
+
+
+/// When mapping a page into a page table for an address space we need to specify how the page's
+/// memory should be managed.
+///
+/// Should the page table take ownership of the page and free it when the page table is dropped, or
+/// should the page be manually managed by the caller?
+///
+/// And example of this is mapping a shared page of memory into a second address space.
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub enum PageManagement
+{
+    /// The page is mapped into the address space but will not be automatically freed when the
+    /// page table is dropped.
+    Manual,
+
+    /// The page is mapped into the address space and will be freed automatically when the page
+    /// table is dropped.
+    Automatic,
+
+    /// The page is mapped into the address space but will be copied when written to.
+    CopyOnWrite,
+
+    /// The page is mapped into another page table as well as this one. Care will need to be
+    /// taken to make sure that if this page is freed that one of the other page tables must then
+    /// take full ownership of the page.
+    CowOwner
+}
 
 
 
@@ -102,14 +130,14 @@ impl PageTableEntry
     /// Create a new page table entry, ready for setting up with the appropriate flags.
     pub const fn new() -> Self
     {
-        PageTableEntry(0)
+        PageTableEntry(PTE_V)
     }
 
     /// Create a new invalid page table entry.
-    pub const fn new_invalid() -> Self
+    pub fn new_invalid() -> Self
     {
-        // Set the reserved bits and leave the valid bit unset.
-        PageTableEntry(PTE_RESERVED)
+        // Leave the valid bit unset.
+        PageTableEntry(0)
     }
 
     /// Create a new page table entry that's a pointer to another page table.
@@ -162,7 +190,7 @@ impl PageTableEntry
             free_page(page_address);
         }
         else if    self.is_leaf()
-                && self.is_page_owned()
+                && self.get_page_management() == PageManagement::Automatic
                 && self.get_physical_address() != 0
         {
             // This entry contains a mapped page of RAM, check to see if we own the page, if we do
@@ -181,10 +209,19 @@ impl PageTableEntry
     /// Is the page table entry a pointer to another page table?
     pub fn is_page_table_ptr(&self) -> bool
     {
-            self.is_valid()
-        && !self.is_readable()
-        && !self.is_writable()
-        && !self.is_executable()
+        if self.0 & PTE_V == 0
+        {
+            return false;
+        }
+
+        if self.0 & (PTE_R & PTE_W & PTE_X) != 0
+        {
+            // If the entry is readable, writable or executable then it cannot be a pointer to a
+            // page table.
+            return false;
+        }
+
+        true
     }
 
     /// Is the entry a leaf entry? Meaning it refers to a page of RAM instead of another page table.
@@ -193,23 +230,36 @@ impl PageTableEntry
         self.is_valid() && !self.is_page_table_ptr()
     }
 
-    /// Set this leaf entry as owning the page of RAM it refers to. This means when the page table
-    /// that owns this entry is dropped the page of RAM will be freed automatically.
-    pub fn set_page_owned(&mut self)
+    /// Set the management style for this page table entry.
+    pub fn set_page_management(&mut self, page_management: PageManagement)
     {
         // This only makes sense for leaf entries.
-        assert!(self.is_leaf(),
-                "Cannot set page ownership on a page table entry that is not a leaf entry.");
+        // Convert our PageManagement enum into the proper bits for the entry.
+        let page_management = match page_management
+            {
+                PageManagement::Manual      => 0,
+                PageManagement::Automatic   => 1,
+                PageManagement::CopyOnWrite => 2,
+                PageManagement::CowOwner    => 3
+            }
+            << 8;
 
-        // We use the software reserved bits to indicate ownership of the page.
-        self.0 |= (PTE_RSW & 1 << 8);
+        // We use the software reserved bits to indicate the management for the page.
+        self.0 &= !PTE_RSW;
+        self.0 |= (PTE_RSW & page_management);
     }
 
     /// If the entry refers to a page, is the page owned by the table itself? If the page is owned
     /// then the page will automatically be freed when the table itself is dropped.
-    pub fn is_page_owned(&self) -> bool
+    pub fn get_page_management(&self) -> PageManagement
     {
-        self.is_valid() && self.is_leaf() && ((self.0 & PTE_RSW) == 1)
+        match (self.0 & PTE_RSW) >> 8
+        {
+            0 => PageManagement::Manual,
+            1 => PageManagement::Automatic,
+            2 => PageManagement::CopyOnWrite,
+            _ => PageManagement::CowOwner
+        }
     }
 
     /// Get the address of the page table this entry points to.
@@ -362,28 +412,9 @@ impl PageTableEntry
         (self.0 & PTE_U) != 0
     }
 
-    /// Set the page table entry's physical page number.
-    pub fn set_ppn(&mut self, index: usize, ppn: usize)
-    {
-        assert!(!self.is_page_table_ptr(),
-                "Cannot set PPN on a page table entry that is a pointer to another page table.");
-
-        match index
-        {
-            0 => self.0 = (self.0 & !PTE_PPN_0) | ((ppn as u64) << 10 & PTE_PPN_0),
-            1 => self.0 = (self.0 & !PTE_PPN_1) | ((ppn as u64) << 19 & PTE_PPN_1),
-            2 => self.0 = (self.0 & !PTE_PPN_2) | ((ppn as u64) << 28 & PTE_PPN_2),
-            _ => panic!("Invalid PPN index {} for page table entry.", index)
-        }
-    }
-
     /// Set if the page being referenced by this entry is readable.
     pub fn set_readable(&mut self, readable: bool)
     {
-        assert!(!self.is_page_table_ptr(),
-                "Cannot set readable on a page table entry that is a pointer to another page \
-                table.");
-
         if readable
         {
             self.0 |= PTE_R;
@@ -397,20 +428,12 @@ impl PageTableEntry
     /// Is the page being referenced by this entry readable?
     pub fn is_readable(&self) -> bool
     {
-        assert!(!self.is_page_table_ptr(),
-                "Cannot set writable on a page table entry that is a pointer to another page \
-                table.");
-
         (self.0 & PTE_R) != 0
     }
 
     /// Set if the page being referenced by this entry is writable.
     pub fn set_writable(&mut self, writable: bool)
     {
-        assert!(!self.is_page_table_ptr(),
-                "Cannot set writable on a page table entry that is a pointer to another page \
-                table.");
-
         if writable
         {
             self.0 |= PTE_W;
@@ -424,20 +447,12 @@ impl PageTableEntry
     /// Is the page being referenced by this entry writable?
     pub fn is_writable(&self) -> bool
     {
-        assert!(!self.is_page_table_ptr(),
-                "Cannot check writable on a page table entry that is a pointer to another page \
-                table.");
-
         (self.0 & PTE_W) != 0
     }
 
     /// Set if the page being referenced by this entry is executable.
     pub fn set_executable(&mut self, executable: bool)
     {
-        assert!(!self.is_page_table_ptr(),
-                "Cannot set executable on a page table entry that is a pointer to another page \
-                table.");
-
         if executable
         {
             self.0 |= PTE_X;
@@ -451,10 +466,6 @@ impl PageTableEntry
     /// Is the page being referenced by this entry executable?
     pub fn is_executable(&self) -> bool
     {
-        assert!(!self.is_page_table_ptr(),
-                "Cannot check executable on a page table entry that is a pointer to another page \
-                table.");
-
         (self.0 & PTE_X) != 0
     }
 }

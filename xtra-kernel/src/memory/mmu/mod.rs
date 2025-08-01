@@ -10,10 +10,11 @@
 // of the MMU code and having circular dependencies can be highly problematic. Instead, we implement
 // structures like the `PageBox` that functions like a box but works directly with pages of memory.
 
-use crate::{ locking::{ LockGuard, spin_lock::SpinLock },
-             memory::{ //mmu::page_box::{ PageBox, PageBoxable },
-                       kernel::KernelMemoryLayout,
-                       memory_device::SystemMemory } };
+use core::sync::atomic::{ AtomicBool, Ordering };
+
+use crate::{ arch::mmu::{ ADDRESSABLE_MEMORY_SIZE, HIGHEST_ADDRESS },
+             locking::{ LockGuard, spin_lock::SpinLock },
+             memory::{ kernel::KernelMemoryLayout, memory_device::SystemMemory, PAGE_SIZE } };
 
 
 
@@ -42,9 +43,8 @@ pub mod page_box;
 
 
 
-use free_page_list::init_free_page_list;
-
-use address_space::{ AddressSpace };
+use crate::memory::mmu::{ address_space::{ AddressSpace },
+                          free_page_list::init_free_page_list };
 
 
 
@@ -60,11 +60,38 @@ static FREE_PAGE_LOCK: SpinLock = SpinLock::new();
 
 
 
-static mut KERNEL_MEMORY: KernelMemoryLayout = KernelMemoryLayout::zeroed();
+/// On boot the memory used by the kernel itself is computed and stored in this static variable.
+///
+/// This tells us where the kernel is loaded in physical memory and how it's internal sections are
+/// laid out.
+static mut KERNEL_MEMORY: Option<KernelMemoryLayout> = None;
 
 
 
+/// The system's physical and logical memory layout. This includes all RAM and FLASH devices
+/// discovered during boot as well as all MMIO regions for attached devices.
 static mut SYSTEM_MEMORY: Option<SystemMemory> = None;
+
+
+
+/// Align an address down to the nearest multiple of the given alignment.
+const fn align_down(address: usize, alignment: usize) -> usize
+{
+    address & !(alignment - 1)
+}
+
+
+
+/// TODO: Make this a kernel configuration option so that we can change the virtual base offset at
+///       compile time.
+///
+/// The base virtual address for the kernel's physical free page management. All free pages in the
+/// system will be mapped into this virtual address space so that the kernel can still access the
+/// physical pages directly as needed. For example mapping a page into an address space.
+///
+/// TODO: Right now we are only allowing for 4GB of actual RAM, we need to make this computed at
+///       runtime based on the system's memory layout.
+const VIRTUAL_BASE_OFFSET: usize = align_down(HIGHEST_ADDRESS - 0x1_0000_0000, PAGE_SIZE);
 
 
 
@@ -87,13 +114,76 @@ pub fn init_memory_manager(kernel_memory: &KernelMemoryLayout,
     // keep copies of the kernel and system memory layouts for later use.
     unsafe
     {
-        KERNEL_MEMORY = *kernel_memory;
+        KERNEL_MEMORY = Some(*kernel_memory);
         SYSTEM_MEMORY = Some(*system_memory);
     }
 
     // Create the kernel's address space.
+    let mut kernel_address_space = AddressSpace::new();
+
+    // Finally, setup the global kernel address space.
+    unsafe
+    {
+        KERNEL_ADDRESS_SPACE = Some(kernel_address_space);
+    }
 
     Ok(())
+}
+
+
+
+/// Keep track of whether the kernel has switched to it's virtual address space or not.
+static KERNEL_IN_VIRTUAL_MODE: AtomicBool = AtomicBool::new(false);
+
+
+
+/// Check if the kernel is currently in virtual mode. This means that the kernel is running under
+/// a virtual address space and not the raw physical address space.
+pub fn is_kernel_in_virtual_mode() -> bool
+{
+    KERNEL_IN_VIRTUAL_MODE.load(Ordering::Relaxed)
+}
+
+
+
+/// On boot once the kernel's virtual address space has been created we will switch to it and start
+/// using it for all memory accesses.
+///
+/// Certain sub-systems need to know this like the free page manager so that they can properly map
+/// virtual addresses to physical addresses and vice versa.
+fn set_kernel_in_virtual_mode()
+{
+    KERNEL_IN_VIRTUAL_MODE.store(true, Ordering::SeqCst);
+}
+
+
+
+/// Map a virtual physical page address to a physical page address.
+pub fn virtual_physical_to_physical(address: usize) -> usize
+{
+    if is_kernel_in_virtual_mode()
+    {
+        address - VIRTUAL_BASE_OFFSET
+    }
+    else
+    {
+        address
+    }
+}
+
+
+
+/// Map a raw physical page address to a virtual physical page address.
+pub fn physical_to_virtual_physical(address: usize) -> usize
+{
+    if is_kernel_in_virtual_mode()
+    {
+        VIRTUAL_BASE_OFFSET + address
+    }
+    else
+    {
+        address
+    }
 }
 
 
@@ -104,8 +194,7 @@ pub fn get_kernel_memory_layout() -> KernelMemoryLayout
 {
     unsafe
     {
-        //KERNEL_MEMORY.as_ref().expect("Kernel memory layout not initialized.")
-        KERNEL_MEMORY
+        KERNEL_MEMORY.expect("Kernel memory layout not initialized.")
     }
 }
 

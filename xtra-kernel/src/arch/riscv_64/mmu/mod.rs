@@ -31,11 +31,22 @@ mod sv39
     /// The definition of the virtual address structure for the SV39 page table format.
     pub mod virtual_address;
 
+
     /// The definition of the page table structure for the SV39 page table format.
     pub mod page_table;
+
+
+    /// The maximum addressable memory under the sv39 page table format.
+    pub const ADDRESSABLE_MEMORY_SIZE: usize = 1 << 39; // 512GB of addressable memory.
+
+
+    /// The highest valid address in the sv39 page table format.
+    pub const HIGHEST_ADDRESS: usize = !0xffff_ff80_0000_0000 & usize::MAX;
 }
 
 
+
+/// if we're compiling for RISC-V and sv39 then export the sv39 as the default MMU implementation.
 #[cfg(feature = "sv39")]
 pub use sv39::*;
 

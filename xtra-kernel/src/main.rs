@@ -192,7 +192,7 @@ fn kernel_panic_handler(info: &PanicInfo) -> !
     let core_index = get_core_index();
 
     println!("{}", OS_PANIC_STR);
-    println!("Fatal error occurred on core {:02}: {}", core_index, info);
+    println!("Fatal error occurred on core {:02}:\n{}", core_index, info);
 
     // TODO: Restart the system gracefully, if possible.
     loop
