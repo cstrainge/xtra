@@ -13,9 +13,7 @@ use crate::{ arch::mmu::{ page_table::{ PageManagement, PageTable } },
                               get_kernel_memory_layout,
                               get_system_memory_layout,
                               page_box::PageBox,
-                              permissions::Permissions,
-                              physical_to_virtual_physical,
-                              VIRTUAL_BASE_OFFSET },
+                              permissions::Permissions },
                      PAGE_SIZE } };
 
 
@@ -50,25 +48,25 @@ impl AddressSpace
                      physical_address: usize,
                      physical_range: usize,
                      permissions: Permissions,
-                     virtualize_address: bool)
+                     _virtualize_address: bool)
         {
             let base_address = physical_address;
             let end_address = physical_address + physical_range;
 
             for page_address in (base_address..end_address).step_by(PAGE_SIZE)
             {
-                let virtual_address =
-                    if virtualize_address
-                    {
-                        // If we are virtualizing the address then we need to add the base offset to
-                        VIRTUAL_BASE_OFFSET + page_address
-                    }
-                    else
-                    {
-                        page_address
-                    };
+//                let virtual_address =
+//                    if virtualize_address
+//                    {
+//                        // If we are virtualizing the address then we need to add the base offset to
+//                        VIRTUAL_BASE_OFFSET + page_address
+//                    }
+//                    else
+//                    {
+//                        page_address
+//                    };
 
-                address_space.page_table.map_page(virtual_address,
+                address_space.page_table.map_page(page_address,
                                                   page_address,
                                                   permissions,
                                                   PageManagement::Manual)

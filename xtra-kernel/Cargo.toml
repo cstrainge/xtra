@@ -23,3 +23,8 @@ rv64s = [ "sv39" ]
 sv32 = []
 sv39 = []
 sv48 = []
+
+
+# Allow the kernel to be aggressively optimized for speed.
+[profile.release]
+lto = "fat"

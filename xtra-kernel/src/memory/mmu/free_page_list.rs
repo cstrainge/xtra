@@ -792,6 +792,14 @@ pub fn init_free_page_list(kernel_memory: &KernelMemoryLayout,
 
 
 
+/// Translate the physical addresses of the free page list into their virtual addresses. Once done
+/// the free page list will be unusable until the kernel's virtual address space is enabled.
+pub fn free_pages_to_virtual_addresses(base_address: usize)
+{
+}
+
+
+
 /// Add a free page to the free page list.
 pub fn add_free_page(page_address: usize)
 {

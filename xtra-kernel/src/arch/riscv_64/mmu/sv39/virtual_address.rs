@@ -8,7 +8,7 @@ use crate::arch::mmu::{ PAGE_SIZE, sv39::page_table::PAGE_TABLE_SIZE };
 
 
 /// These bits are reserved for future use and must be set to zero.
-const PTA_RESERVED: u64
+pub const PTA_RESERVED: u64
 //          6            5           4            3           2            1           0
 //       3210 9876 5432 1098 7654 3210 9876 5432 1098 7654 3210 9876 5432 1098 7654 3210
     = 0b_1111_1111_1111_1111_1111_1111_1000_0000_0000_0000_0000_0000_0000_0000_0000_0000;

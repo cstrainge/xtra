@@ -27,7 +27,7 @@ use crate::arch::csr::read_mhartid;
 
 
 
-/// Get the index of the current core.
+/// Get the index of the core this thread is running on.
 pub fn get_core_index() -> usize
 {
     read_mhartid() as usize

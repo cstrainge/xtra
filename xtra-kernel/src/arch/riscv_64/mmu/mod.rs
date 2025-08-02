@@ -1,10 +1,12 @@
 
 /// Module for the RISC-V 64-bit Memory Management Unit (MMU).
 
+use core::mem::size_of;
+
 
 
 /// The RISC-V 64-bit architecture uses a page size of 4KB, so we define it here.
-pub const PAGE_SIZE: usize = 4096;
+pub(self) const PAGE_SIZE: usize = 4096;
 
 
 
@@ -22,6 +24,7 @@ const _: () =
 /// SV39 page table format. It defines the page table entry structure and the constants used for
 /// managing the page table entries.
 #[cfg(feature = "sv39")]
+#[cfg(target_pointer_width = "64")]
 mod sv39
 {
     /// The definition of the page table entry structure for the SV39 page table format.
@@ -40,8 +43,12 @@ mod sv39
     pub const ADDRESSABLE_MEMORY_SIZE: usize = 1 << 39; // 512GB of addressable memory.
 
 
-    /// The highest valid address in the sv39 page table format.
-    pub const HIGHEST_ADDRESS: usize = !0xffff_ff80_0000_0000 & usize::MAX;
+    use self::virtual_address::PTA_RESERVED;
+
+
+    /// The highest valid address in the sv39 page table format. Because the top bits are reserved,
+    /// the highest address is the last address that can be used without hitting the reserved bits.
+    pub const HIGHEST_VIRTUAL_ADDRESS: usize = !PTA_RESERVED as usize;
 }
 
 
