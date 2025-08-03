@@ -250,41 +250,36 @@ impl FreePageList
             return;
         }
 
-        // Ok, the page belongs somewhere in the middle of the list, so we need to
-        // iterate through the list to find the right place to insert it.
+        // The new page belongs somewhere in the middle of the list, so we need to find the page
+        // that comes BEFORE the new page we're inserting.
         unsafe
         {
-            let parent_page = self.find_insertion_point(new_page);
+            let parent_page = self.find_insertion_point(new_page)
+                                  .expect("Failed to find parent page for new page.");
 
-            assert!(parent_page.is_some(), "Failed to find parent page for new page.");
-
-            let parent_page = parent_page.unwrap();
-
-            // Make sure that the page is not already in the list.
+            // Make sure that the new page is not already in the list.
             assert!((*parent_page).address != (*new_page).address,
                     "Trying to insert a duplicate page at 0x{:x} into the free page list.",
                     (*new_page).address);
 
-            // Perform the actual insertion into the list.
+            // Get the page that will be after the new page we're inserting.
+            let original_next_page = (*parent_page).next_page;
+
+            // Wire up the new page's pointers.
             (*new_page).prev_page = Some(parent_page);
-            (*new_page).next_page = (*parent_page).next_page;
+            (*new_page).next_page = original_next_page;
+
+            // Make sure that the parent now points to the new page.
             (*parent_page).next_page = Some(new_page);
 
-            assert!(self.last_page.is_some(),
-                    "Free page list is not empty, but last page is None.");
-
-            // Check to see if we are adding at the end of the list or not.
-            if (*parent_page).next_page.is_some()
+            // If there was a page after the parent, it now needs to point back at this new page.
+            // Otherwise our new page is the new last page in the list.
+            if let Some(next_page_ptr) = original_next_page
             {
-                // We're somewhere in the middle of the list, so we need to update the next page's
-                // previous pointer.
-                let next_page = (*parent_page).next_page.unwrap();
-                (*next_page).prev_page = Some(new_page);
+                (*next_page_ptr).prev_page = Some(new_page);
             }
             else
             {
-                // The new page was added at the end of the list so we need to update the last page
-                // pointer to reflect this.
                 self.last_page = Some(new_page);
             }
         }
@@ -657,35 +652,36 @@ impl FreePageList
 
         unsafe
         {
-            // If the new page is logically before the first page in the list, then we can just
-            // return None, because there is no parent page.
-            if (*self.first_page.unwrap()).address > (*new_page).address
-            {
-                return None;
-            }
-
-            // Start iterating through the pages in the list to find the proper parent page.
+            // We assume that this function is only called for pages that are not at the beginning
+            // of the list.
             let mut current_page = self.first_page;
             let new_page_address = (*new_page).address;
 
             while let Some(current_page_ptr) = current_page
             {
-                // If the current page's address is less than the new page's address we have our
-                // parent page.
-                let current_page_address = (*current_page_ptr).address;
-
-                if current_page_address < new_page_address
+                // Check the next page, if there is no next page or if the next page's address is
+                // greater than our new page's address then the current page is the correct parent
+                // page for our insertion.
+                if let Some(next_page_ptr) = (*current_page_ptr).next_page
                 {
+                    if (*next_page_ptr).address > new_page_address
+                    {
+                        return Some(current_page_ptr);
+                    }
+                }
+                else
+                {
+                    // There is no next page, so the current page has to be the insertion point.
                     return Some(current_page_ptr);
                 }
 
-                // We haven't found the page we're looking for yet, so move on to the next page.
+                // Move to the next page in the list.
                 current_page = (*current_page_ptr).next_page;
             }
         }
 
-        // If we got here then we didn't find a parent page, so return None.
-        None
+        // This code shouldn't be reached.
+        unreachable!();
     }
 }
 
@@ -788,14 +784,6 @@ pub fn init_free_page_list(kernel_memory: &KernelMemoryLayout,
             }
         }
     }
-}
-
-
-
-/// Translate the physical addresses of the free page list into their virtual addresses. Once done
-/// the free page list will be unusable until the kernel's virtual address space is enabled.
-pub fn free_pages_to_virtual_addresses(base_address: usize)
-{
 }
 
 
