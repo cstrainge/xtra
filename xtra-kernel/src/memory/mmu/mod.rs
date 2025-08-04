@@ -25,7 +25,8 @@ use crate::{ arch::{ get_core_index, mmu::{ ADDRESSABLE_MEMORY_SIZE, HIGHEST_VIR
 /// mapped virtual address. In order to keep things accessible we need to map all the physical pages
 /// of RAM in the system to a virtual counterpart in the upper portion of the accessible address
 /// space.
-pub mod virtual_page_address;
+pub mod virtual_page_ptr;
+
 
 
 /// Internal module for managing the list of free memory pages in the system.
@@ -55,8 +56,8 @@ pub mod page_box;
 
 use crate::memory::mmu::{ address_space::{ AddressSpace },
                           free_page_list::init_free_page_list,
-                          virtual_page_address::{ init_virtual_base_offset,
-                                                  set_kernel_in_virtual_mode } };
+                          virtual_page_ptr::{ init_virtual_base_offset,
+                                              set_kernel_in_virtual_mode } };
 
 
 

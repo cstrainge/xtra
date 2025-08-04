@@ -13,7 +13,8 @@ use crate::{ arch::mmu::{ page_table::{ PageManagement, PageTable } },
                               get_kernel_memory_layout,
                               get_system_memory_layout,
                               page_box::PageBox,
-                              permissions::Permissions },
+                              permissions::Permissions,
+                              virtual_page_ptr::virtualize_address },
                      PAGE_SIZE } };
 
 
@@ -48,25 +49,25 @@ impl AddressSpace
                      physical_address: usize,
                      physical_range: usize,
                      permissions: Permissions,
-                     _virtualize_address: bool)
+                     virtualize: bool)
         {
             let base_address = physical_address;
             let end_address = physical_address + physical_range;
 
             for page_address in (base_address..end_address).step_by(PAGE_SIZE)
             {
-//                let virtual_address =
-//                    if virtualize_address
-//                    {
-//                        // If we are virtualizing the address then we need to add the base offset to
-//                        VIRTUAL_BASE_OFFSET + page_address
-//                    }
-//                    else
-//                    {
-//                        page_address
-//                    };
+                let virtual_address =
+                    if virtualize
+                    {
+                        // If we are virtualizing the address then we need to add the base offset to
+                        virtualize_address(page_address)
+                    }
+                    else
+                    {
+                        page_address
+                    };
 
-                address_space.page_table.map_page(page_address,
+                address_space.page_table.map_page(virtual_address,
                                                   page_address,
                                                   permissions,
                                                   PageManagement::Manual)

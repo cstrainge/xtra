@@ -13,7 +13,10 @@
 // These special pages are mapped into all address spaces so that the kernel can access them quickly
 // and easily.
 
-use core::{ fmt::{ self, Display, Formatter },
+use core::{ any::type_name,
+            convert::TryFrom,
+            fmt::{ self, Debug, Display, Formatter },
+            ops::{ Deref, DerefMut },
             sync::atomic::{ AtomicBool, AtomicUsize, Ordering } };
 
 use crate::{ arch::mmu::HIGHEST_VIRTUAL_ADDRESS,
@@ -53,21 +56,32 @@ impl Display for AddressError
                 write!(f, "Address is a null pointer"),
 
             AddressError::BadVirtualAddress { address, min, max } =>
-                write!(f, "Virtual address {} is outside of the valid range [{}, {}]",
+                write!(f, "Virtual address {} is outside of the valid range [{}, {}].",
                        address,
                        min,
                        max),
 
             AddressError::BadPhysicalAddress { address, max } =>
-                write!(f, "Physical address {} is outside of the valid range [0, {}]",
+                write!(f, "Physical address {} is outside of the valid range [0, {}].",
                        address,
                        max),
 
             AddressError::BadPageAlignment { address, alignment } =>
-                write!(f, "Address {} is not properly aligned to a page boundary of {}",
+                write!(f, "Address {} is not properly aligned to a page boundary of {}.",
                        address,
                        alignment)
         }
+    }
+}
+
+
+
+impl Debug for AddressError
+{
+    /// Format the address error for debugging purposes.
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result
+    {
+        Display::fmt(self, f)
     }
 }
 
@@ -212,6 +226,14 @@ pub fn init_virtual_base_offset()
 
 
 
+pub fn virtualize_address(address: usize) -> usize
+{
+    // Otherwise we need to convert the physical address to a virtual one.
+    virtual_base_offset() + address
+}
+
+
+
 /// A struct that maintains addresses for our pages of physical memory. These addresses can be
 /// either within the virtual address space or in the physical address space depending on the mode
 /// kernel is in.
@@ -220,120 +242,69 @@ pub fn init_virtual_base_offset()
 /// pointer in one mode would be an invalid pointer in the other mode.
 #[repr(transparent)]
 #[derive(Copy, Clone, PartialEq, Eq)]
-pub struct VirtualPageAddress(usize);
-
-
-
-impl VirtualPageAddress
+pub struct VirtualPagePtr<T>
 {
-    /// Create a new virtual address from a raw typed pointer. Internally this will make sure that
-    /// the address is in the virtual address space.
-    ///
-    /// Receiving a NULL pointer or a non page aligned pointer will result in an error.
-    pub fn from_ptr<T>(address: *const T) -> Result<Self>
+    /// The underlying raw pointer to the virtual page data.
+    raw_ptr: *mut T
+}
+
+
+
+impl<T> VirtualPagePtr<T>
+{
+    /// Create a new VirtualPagePtr from a raw pointer. In either the virtual or physical address
+    /// space depending on the kernel's mode.
+    pub fn new(raw_ptr: *mut T) -> Result<Self>
     {
-        // Convert to our internal format.
-        let address = address as usize;
+        Self::new_from_address(raw_ptr as usize)
+    }
 
-        // Make sure that the given address is aligned to the page boundary.
-        if address % PAGE_SIZE != 0
-        {
-            return Err(AddressError::BadPageAlignment
-                {
-                    address,
-                    alignment: PAGE_SIZE
-                });
-        }
-
-        // Make sure that the address is not a null pointer.
-        if address == 0
-        {
-            return Err(AddressError::Null);
-        }
-
+    /// Create a new VirtualPagePtr from a physical or virtual address depending on the kernel mode.
+    pub fn new_from_address(address: usize) -> Result<Self>
+    {
         // Check to see if there is conversion required based on the kernel's mode.
         if is_kernel_in_virtual_mode()
         {
             // The kernel is in virtual mode so we can just use the address as is.
-            Self::from_virtual(address as usize)
+            Self::from_virtual(address)
         }
         else
         {
             // The kernel is in physical mode, so we need to convert the address to a virtual one.
-            Self::from_physical(address as usize)
+            Self::from_physical(address)
         }
     }
 
-    /// Create a new virtual address structure from an existing physical address value.
+    /// Create a new VirtualPagePtr from an existing virtual address. That is a page address in the
+    /// virtual address space of the kernel.
     ///
-    /// This will fail if the address is outside of the physical address space or if the value is
-    /// zero.
-    pub fn from_physical(physical_address: usize) -> Result<Self>
+    /// If the address isn't valid then this will return an error instead.
+    fn from_virtual(address: usize) -> Result<Self>
     {
-        let highest = highest_physical_address();
 
-        // Make sure that the page address is aligned to the page size.
-        if physical_address % PAGE_SIZE != 0
+        // Check if the address is properly aligned to a page boundary.
+        if address % PAGE_SIZE != 0
         {
-            return Err(AddressError::BadPageAlignment
-                {
-                    address: physical_address,
-                    alignment: PAGE_SIZE
-                });
+            return Err(AddressError::BadPageAlignment { address, alignment: PAGE_SIZE });
         }
 
-        match physical_address
-        {
-            0 =>
-                {
-                    Err(AddressError::Null)
-                },
-
-            _ if physical_address >= highest =>
-                {
-                    Err(AddressError::BadPhysicalAddress
-                        {
-                            address: physical_address,
-                            max: highest
-                        })
-                },
-
-            _ =>
-                {
-                    Ok(Self(physical_address + virtual_base_offset()))
-                }
-        }
-    }
-
-    /// Create a new virtual address structure from an existing virtual address value.
-    ///
-    /// We make sure that the virtual address is in the correct range.
-    pub fn from_virtual(virtual_address: usize) -> Result<Self>
-    {
+        // Check if the address makes sense and if it does then create a new VirtualPagePtr.
         let virtual_base = virtual_base_offset();
 
-        if virtual_address % PAGE_SIZE != 0
-        {
-            return Err(AddressError::BadPageAlignment
-                {
-                    address: virtual_address,
-                    alignment: PAGE_SIZE
-                });
-        }
-
-        match virtual_address
+        match address
         {
             0 =>
                 {
+                    // This is a null pointer, so we can't create a valid VirtualPagePtr.
                     Err(AddressError::Null)
                 },
 
-            _ if    virtual_address < virtual_base
-                 || virtual_address > HIGHEST_VIRTUAL_ADDRESS =>
+            _ if !Self::is_in_virtual_address_space(address) =>
                 {
+                    // This address doesn't make sense in the virtual address space.
                     Err(AddressError::BadVirtualAddress
                         {
-                            address: virtual_address,
+                            address,
                             min: virtual_base,
                             max: HIGHEST_VIRTUAL_ADDRESS
                         })
@@ -341,66 +312,160 @@ impl VirtualPageAddress
 
             _ =>
                 {
-                    Ok(Self(virtual_address))
+                    // The address is valid, so we can create a new VirtualPagePtr.
+                    Ok(Self { raw_ptr: address as *mut T })
                 }
         }
     }
 
-    /// Explicitly convert this virtual address to a physical address.
-    pub fn to_physical(&self) -> usize
-    {
-        // Translate the virtual address back to a physical address by subtracting the
-        // virtual base offset.
-        self.0 - virtual_base_offset()
-    }
-
-    /// Explicitly get the virtual address from this virtual address structure.
-    pub fn to_virtual(&self) -> usize
-    {
-        // No translation needed, just return the address.
-        self.0
-    }
-
-    /// Get the raw address of this virtual address, depending on the mode the kernel is in.
+    /// Create a new VirtualPagePtr from an existing physical address, that is an address in the
+    /// physical address space of the system.
     ///
-    /// If the kernel is in virtual mode then this will return the virtual address, otherwise it
-    /// will return the physical address.
-    pub fn to_usize(&self) -> usize
+    /// If the address isn't valid then this will return an error instead.
+    fn from_physical(address: usize) -> Result<Self>
+    {
+        // Is the new address page aligned?
+        if address % PAGE_SIZE != 0
+        {
+            return Err(AddressError::BadPageAlignment { address, alignment: PAGE_SIZE });
+        }
+
+        // Check if the address is within the valid range of physical addresses.
+        let highest_address = highest_physical_address();
+
+        match address
+        {
+            0 =>
+                {
+                    // This is a null pointer, so we can't create a valid VirtualPagePtr.
+                    Err(AddressError::Null)
+                },
+
+            _ if !Self::is_in_physical_address_space(address) =>
+                {
+                    // This address doesn't make sense in the physical address space.
+                    Err(AddressError::BadPhysicalAddress { address, max: highest_address })
+                },
+
+            _ =>
+                {
+                    // The address is valid, so we can create a new VirtualPagePtr. So shift the
+                    // physical address into the virtual address space.
+                    let virtual_address = virtualize_address(address);
+
+                    Ok(Self { raw_ptr: virtual_address as *mut T })
+                }
+        }
+    }
+
+    /// Check if the given address is within the valid range of virtual addresses.
+    pub fn is_in_virtual_address_space(address: usize) -> bool
+    {
+        // Check if the address is within the valid range of virtual addresses.
+           address >= virtual_base_offset()
+        && address <= HIGHEST_VIRTUAL_ADDRESS
+    }
+
+    /// Check if the given address is within the valid range of physical addresses.
+    pub fn is_in_physical_address_space(address: usize) -> bool
+    {
+        // Check if the address is within the valid range of physical addresses.
+           address < highest_physical_address()
+        && address > 0
+    }
+
+    pub fn as_usize(&self) -> usize
     {
         if is_kernel_in_virtual_mode()
         {
-            // The kernel is in virtual mode so return the address as a virtual address.
-            self.to_virtual()
+            self.raw_ptr as usize
         }
         else
         {
-            // Convert from the virtual address space to the physical address space.
-            self.to_physical()
+            let address = self.raw_ptr as usize;
+
+            address - virtual_base_offset()
         }
     }
 
-    /// Convert this virtual address to a raw pointer depending on the mode the kernel is in.
-    pub fn to_ptr<T>(&self) -> *const T
+    pub fn as_physical_address(&self) -> usize
     {
-        self.to_usize() as *const T
+        self.raw_ptr as usize - virtual_base_offset()
     }
 
-    /// Convert this virtual address to a mutable raw pointer depending on the mode the kernel is
-    /// in.
-    pub fn to_mut_ptr<T>(&self) -> *mut T
+    pub fn as_ptr(&self) -> *const T
     {
-        self.to_usize() as *mut T
+        let address = self.as_usize();
+
+        address as *const T
+    }
+
+    pub fn as_mut_ptr(&mut self) -> *mut T
+    {
+        let address = self.as_usize();
+
+        address as *mut T
     }
 }
 
 
 
-impl Display for VirtualPageAddress
+impl<T> Deref for VirtualPagePtr<T>
+{
+    type Target = T;
+
+    fn deref(&self) -> &Self::Target
+    {
+        unsafe { &*self.as_ptr() }
+    }
+}
+
+
+
+impl<T> DerefMut for VirtualPagePtr<T>
+{
+    fn deref_mut(&mut self) -> &mut Self::Target
+    {
+        unsafe { &mut *self.as_mut_ptr() }
+    }
+}
+
+
+
+impl<T> TryFrom<*mut T> for VirtualPagePtr<T>
+{
+    type Error = AddressError;
+
+    fn try_from(raw_ptr: *mut T) -> Result<Self>
+    {
+        Self::new(raw_ptr)
+    }
+}
+
+
+
+impl<T> TryFrom<usize> for VirtualPagePtr<T>
+{
+    type Error = AddressError;
+
+    fn try_from(address: usize) -> Result<Self>
+    {
+        Self::new_from_address(address)
+    }
+}
+
+
+
+impl<T> Display for VirtualPagePtr<T>
 {
     /// Format the virtual page address for display to the user when needed. This is only safe to
     /// call once the memory manager has been initialized.
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result
     {
-        write!(f, "VPA({:#x}/{:#x})", self.0, self.to_physical())
+        let address = self.as_usize();
+        write!(f, "VPA<{}>({:#x}/{:#x})",
+               type_name::<T>(),
+               address,
+               address - virtual_base_offset())
     }
 }
