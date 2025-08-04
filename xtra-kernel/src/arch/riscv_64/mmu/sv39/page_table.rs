@@ -19,7 +19,9 @@ use crate::{ arch::mmu::{ PAGE_SIZE,
                           sv39::{ page_table_entry::PageTableEntry,
                                   virtual_address::VirtualAddress } },
              printing::BufferWriter,
-             memory::{ mmu::{ page_box::PageBoxable, permissions::Permissions } } };
+             memory::{ mmu::{ page_box::PageBoxable,
+                              permissions::Permissions,
+                              virtual_page_ptr::VirtualPagePtr } } };
 
 
 
@@ -516,11 +518,11 @@ impl PageBoxable for PageTable
 {
     /// Allow the page table to be constructed directly from a page of memory without needing to
     /// allocate a new page.
-    unsafe fn from_physical_page(page_address: usize) -> *mut Self
+    unsafe fn init_in_place(page_address: &mut VirtualPagePtr<Self>)
     {
         unsafe
         {
-            Self::from_physical_address(page_address)
+            Self::from_physical_address(page_address.as_usize());
         }
     }
 }

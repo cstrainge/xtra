@@ -17,6 +17,7 @@ use core::{ any::type_name,
             convert::TryFrom,
             fmt::{ self, Debug, Display, Formatter },
             ops::{ Deref, DerefMut },
+            ptr::{ from_raw_parts, from_raw_parts_mut, metadata },
             sync::atomic::{ AtomicBool, AtomicUsize, Ordering } };
 
 use crate::{ arch::mmu::HIGHEST_VIRTUAL_ADDRESS,
@@ -242,7 +243,7 @@ pub fn virtualize_address(address: usize) -> usize
 /// pointer in one mode would be an invalid pointer in the other mode.
 #[repr(transparent)]
 #[derive(Copy, Clone, PartialEq, Eq)]
-pub struct VirtualPagePtr<T>
+pub struct VirtualPagePtr<T: ?Sized>
 {
     /// The underlying raw pointer to the virtual page data.
     raw_ptr: *mut T
@@ -374,37 +375,40 @@ impl<T> VirtualPagePtr<T>
         && address > 0
     }
 
-    pub fn as_usize(&self) -> usize
-    {
-        if is_kernel_in_virtual_mode()
-        {
-            self.raw_ptr as usize
-        }
-        else
-        {
-            let address = self.raw_ptr as usize;
-
-            address - virtual_base_offset()
-        }
-    }
-
     pub fn as_physical_address(&self) -> usize
     {
         self.raw_ptr as usize - virtual_base_offset()
+    }
+}
+
+
+
+impl<T: ?Sized> VirtualPagePtr<T>
+{
+    pub fn as_usize(&self) -> usize
+    {
+        let mut raw_size = self.raw_ptr as *const u8 as usize;
+
+        if !is_kernel_in_virtual_mode()
+        {
+            raw_size -= virtual_base_offset();
+        }
+
+        raw_size
     }
 
     pub fn as_ptr(&self) -> *const T
     {
         let address = self.as_usize();
 
-        address as *const T
+        from_raw_parts(address as *const (), metadata(self.raw_ptr))
     }
 
     pub fn as_mut_ptr(&mut self) -> *mut T
     {
         let address = self.as_usize();
 
-        address as *mut T
+        from_raw_parts_mut(address as *mut (), metadata(self.raw_ptr))
     }
 }
 
@@ -451,6 +455,26 @@ impl<T> TryFrom<usize> for VirtualPagePtr<T>
     fn try_from(address: usize) -> Result<Self>
     {
         Self::new_from_address(address)
+    }
+}
+
+
+
+impl<T: ?Sized> From<&VirtualPagePtr<T>> for usize
+{
+    fn from(ptr: &VirtualPagePtr<T>) -> usize
+    {
+        ptr.as_usize()
+    }
+}
+
+
+
+impl<T: ?Sized> From<&mut VirtualPagePtr<T>> for usize
+{
+    fn from(ptr: &mut VirtualPagePtr<T>) -> usize
+    {
+        ptr.as_usize()
     }
 }
 

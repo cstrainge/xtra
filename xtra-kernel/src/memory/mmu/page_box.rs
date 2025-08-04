@@ -5,9 +5,10 @@
 // The contained type must also fit withing exactly a single page of memory. The exact size of a
 // page is configured by the `PAGE_SIZE` constant in the `mmu` module.
 
-use core::{ any::type_name, /*mem::size_of,*/ ops::{ Deref, DerefMut, Drop }, ptr::drop_in_place };
+use core::{ any::type_name, ops::{ Deref, DerefMut, Drop }, ptr::drop_in_place };
 
-use crate::memory::{ mmu::{ allocate_page, free_page }, PAGE_SIZE };
+use crate::memory::{ mmu::{ allocate_page, free_page, virtual_page_ptr::VirtualPagePtr },
+                     PAGE_SIZE };
 
 
 
@@ -18,7 +19,7 @@ pub trait PageBoxable
 {
     /// Allow the boxed item to be constructed directly from a page of memory without needing to
     /// allocate it's information on the stack.
-    unsafe fn from_physical_page(page_address: usize) -> *mut Self;
+    unsafe fn init_in_place(page_address: &mut VirtualPagePtr<Self>);
 }
 
 
@@ -29,7 +30,7 @@ pub trait PageBoxable
 #[repr(transparent)]
 pub struct PageBox<T: ?Sized>
 {
-    pointer: *mut T
+    pointer: VirtualPagePtr<T>
 }
 
 
@@ -58,8 +59,15 @@ impl<T> PageBox<T>
 
         let page_address = page_address.unwrap();
 
-        // Create a new PageBox from the allocated page.
-        let pointer = unsafe { T::from_physical_page(page_address) };
+        // Create a virtual page pointer from the allocated page address.
+        let mut pointer = VirtualPagePtr::new_from_address(page_address)
+            .expect("Failed to create a virtual page pointer from the allocated page address.");
+
+        unsafe
+        {
+            // Allow the type to initialize itself in the allocated page of memory.
+            T::init_in_place(&mut pointer);
+        }
 
         Self { pointer }
     }
@@ -74,7 +82,14 @@ impl<T> PageBox<T>
                 "Page address must be aligned to the page size ({} bytes).",
                 PAGE_SIZE);
 
-        let pointer = unsafe { T::from_physical_page(page_address) };
+        let mut pointer = VirtualPagePtr::new_from_address(page_address)
+            .expect("Failed to create a virtual page pointer from the physical address.");
+
+        unsafe
+        {
+            // Allow the type to initialize itself in the page of memory.
+            T::init_in_place(&mut pointer);
+        }
 
         Self { pointer }
     }
@@ -89,7 +104,7 @@ impl<T> Deref for PageBox<T>
     /// Dereference the `PageBox` to get a reference to the contained type.
     fn deref(&self) -> &Self::Target
     {
-        unsafe { &*self.pointer }
+        &*self.pointer
     }
 }
 
@@ -100,7 +115,7 @@ impl<T> DerefMut for PageBox<T>
     /// Dereference the `PageBox` to get a mutable reference to the contained type.
     fn deref_mut(&mut self) -> &mut Self::Target
     {
-        unsafe { &mut *self.pointer }
+        &mut *self.pointer
     }
 }
 
@@ -113,9 +128,9 @@ impl<T: ?Sized> Drop for PageBox<T>
     {
         unsafe
         {
-            let page_address = self.pointer as *mut u8 as usize;
+            let page_address = usize::from(&self.pointer);
 
-            drop_in_place(self.pointer);
+            drop_in_place(self.pointer.as_mut_ptr());
             free_page(page_address);
         }
     }

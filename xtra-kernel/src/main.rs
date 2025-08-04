@@ -5,7 +5,7 @@
 #![no_std]
 #![no_main]
 #![allow(unused)]
-//#![feature(let_chains)]
+#![feature(ptr_metadata)]
 #![feature(naked_functions_target_feature)]
 
 
