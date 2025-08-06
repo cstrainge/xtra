@@ -22,6 +22,7 @@
         "chrono",
         "csrr",
         "csrw",
+        "devirtualize",
         "ehsize",
         "filesz",
         "genext",
