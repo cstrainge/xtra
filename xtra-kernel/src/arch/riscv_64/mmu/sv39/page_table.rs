@@ -43,180 +43,6 @@ const MAX_TABLE_INDIRECTIONS: usize = 3;
 
 
 
-/// An iterator that walks over all the mapped pages in a page table. It only iterates over actually
-/// mapped pages, skipping any invalid, or empty entries in the page table.
-pub struct PageTableIterator<'a>
-{
-    /// A reference to the page table we are iterating over.
-    page_table: &'a PageTable,
-
-    /// The current index for the top level of the page table.
-    index_2: usize,
-
-    /// The second level index of the page table.
-    index_1: usize,
-
-    /// The final level index of the page table. At this point it should be all invalid or leaf
-    /// entries.
-    index_0: usize,
-
-    /// The absolute index of the current entry in the page table. This is so that the iterator can
-    /// return the index of the entry in the page table, even though the page table itself does not
-    /// support indexing.
-    absolute_index: usize
-}
-
-
-
-impl<'a> PageTableIterator<'a>
-{
-    /// Create a new iterator for the given page table. The iterator will start at the first entry
-    /// in the page table and will iterate over all the entries in the page table.
-    fn new(page_table: &'a PageTable) -> Self
-    {
-        Self { page_table, index_2: 0, index_1: 0, index_0: 0, absolute_index: 0 }
-    }
-}
-
-
-
-impl<'a> Iterator for PageTableIterator<'a>
-{
-    /// Type definition for the iterator's return value. It will return a tuple of the logical index
-    /// of the entry in the page table and a reference to the `PageTableEntry`.
-    ///
-    /// Note that the page table itself does not support indexing, so the index returned is just a
-    /// logical index that is incremented for each valid entry found in the page table.
-    type Item = (usize, &'a PageTableEntry);
-
-
-    /// Attempt to get the next valid entry in the page table, skipping any invalid or empty
-    /// entries.
-    ///
-    /// Will return `None` when there are no more valid entries in the page table. Or
-    /// `(index, entry)` where `index` is the absolute index of the entry in the page table and
-    /// `entry` is a reference to the `PageTableEntry` at that index.
-    fn next(&mut self) -> Option<Self::Item>
-    {
-        let mut index_2 = 0;
-        let mut index_1 = 0;
-        let mut index_0 = 0;
-
-        let mut indices = [ &mut index_2, &mut index_1, &mut index_0 ];
-        let slice: &mut [&mut usize] = &mut indices[..];
-
-        let entry = Self::get_next_entry(&self.page_table.entries, slice);
-
-        self.index_2 = index_2;
-        self.index_1 = index_1;
-        self.index_0 = index_0;
-
-        if entry.is_some()
-        {
-            let result = (self.absolute_index, entry.unwrap());
-            self.absolute_index += 1;
-
-            Some(result)
-        }
-        else
-        {
-            None
-        }
-    }
-}
-
-
-
-impl<'a> PageTableIterator<'a>
-{
-    /// Get the next valid entry in the page table, skipping any invalid or empty entries.
-    ///
-    /// We take a reference to the entries of a page table and a mutable reference to an array of
-    /// indices that represent each table tier of the iteration.
-    ///
-    /// So, at the top level, we get [&mut usize; 3] which represents the three levels of the page
-    /// table, but at the next level we get [&mut usize; 2] which represents a second tier of the
-    /// page table, and finally at the leaf level we get [&mut usize; 1] which represents the
-    /// leaf entries of the page table.  We know it has to be a leaf because the SV39 page table
-    /// format only has three levels.
-    fn get_next_entry(entries: &'a [PageTableEntry; PAGE_TABLE_SIZE],
-                      indices: &mut [&mut usize]) -> Option<&'a PageTableEntry>
-    {
-        // If we've reached the end of the index chain there's nothing to iterate over, there can
-        // not be a fourth level table in a SV39 page table.
-        if indices.len() == 0
-        {
-            return None;
-        }
-
-        // Iterate until we get either a leaf node or another sub-page table.
-        for top_index in *indices[0]..PAGE_TABLE_SIZE
-        {
-            // Remember where we are for next time.
-            let index: &mut usize = indices[0];
-            *index = top_index;
-
-            // Get the entry at the current index.
-            let entry = &entries[top_index];
-
-            // Make sure we have a valid entry.
-            if entry.is_valid()
-            {
-                // We have a valid entry, so is it a page table?
-                if entry.is_page_table_ptr()
-                {
-                    // If we've run out of indices to continue the iteration then we can't continue
-                    // down the chain. A page table pointer doesn't make sense at this point.
-                    assert!(indices.len() >= 1,
-                            "Page table entry is a pointer to another page table, but no indices \
-                            provided to continue the iteration.");
-
-                    // Move down one step in the chain. Get next sub-index and promote it to the
-                    // top index for the next iteration.
-                    let sub_indices: &mut [&mut usize] = &mut indices[1..];
-
-                    // Extract a reference to the sub-table entries from the entry's table pointer.
-                    let sub_table_entries = unsafe
-                        {
-                            let sub_table_ptr = entry.get_table_address();
-                            &(*sub_table_ptr).entries
-                        };
-
-                    // Try the next level of the page table. If it returns `None` then we need to
-                    // keep iterating at the current level.
-                    let result = Self::get_next_entry(sub_table_entries, sub_indices);
-
-                    if result.is_some()
-                    {
-                        // We found a valid entry in the sub-table, so return it.
-                        return result;
-                    }
-                }
-                else
-                {
-                    // We have a leaf entry so we can return it.
-                    return Some(entry);
-                }
-            }
-        }
-
-        // If we've reached the end of a sub-table we need to reset the index for that sub-table
-        // and continue iterating at the next index in the parent table.
-        //
-        // We don't do this for the top level table because once we've iterated though all entries
-        // of the top table, that's it, there are no more entries to iterate over.
-        if indices.len() < MAX_TABLE_INDIRECTIONS
-        {
-            // Reset the index for the current sub-table.
-            *indices[1] = 0;
-        }
-
-        None
-    }
-}
-
-
-
 /// The page table structure for the SV39 page table format. It contains an array of 512
 /// `PageTableEntry` entries, each of which is 8 bytes in size. The total size of the page table
 /// is 4096 bytes (4KB), which is the standard page size for RISC-V 64-bit systems.
@@ -275,10 +101,10 @@ impl PageTable
     }
 
     /// Get an immutable iterator for all of the pages mapped in the page table.
-    pub fn iter(&self) -> PageTableIterator<'_>
-    {
-        PageTableIterator::new(self)
-    }
+    // pub fn iter(&self) -> PageTableIterator<'_>
+    // {
+    //     PageTableIterator::new(self)
+    // }
 
 
     /// Map a physical page of RAM into an address space at the given virtual address.
@@ -423,7 +249,7 @@ impl PageTable
         unsafe
         {
             // Get the second level page table.
-            let second_level_table = if self.entries[vpn2].is_valid()
+            let mut second_level_table = if self.entries[vpn2].is_valid()
                 {
                     if !self.entries[vpn2].is_page_table_ptr()
                     {
@@ -439,7 +265,7 @@ impl PageTable
                 };
 
             // Look up the third level table from the second level table.
-            let third_level_table = if (*second_level_table).entries[vpn1].is_valid()
+            let mut third_level_table = if second_level_table.entries[vpn1].is_valid()
             {
                     if !(*second_level_table).entries[vpn1].is_page_table_ptr()
                     {
@@ -450,12 +276,14 @@ impl PageTable
                 }
                 else
                 {
-                    (*second_level_table).entries[vpn1] = PageTableEntry::new_page_table_ptr();
-                    (*second_level_table).entries[vpn1].get_table_address()
+                    second_level_table.entries[vpn1] = PageTableEntry::new_page_table_ptr();
+                    second_level_table.entries[vpn1].get_table_address()
                 };
 
-            // Look up the page table entry in the third level table.
-            Ok(&mut (*third_level_table).entries[vpn0])
+                // Look up the page table entry in the third level table.
+            let raw_ptr = &mut third_level_table.entries[vpn0] as *mut PageTableEntry;
+
+            Ok(&mut *raw_ptr)
         }
     }
 
@@ -507,7 +335,9 @@ impl PageTable
                 };
 
             // Look up the page table entry in the third level table.
-            Ok(&(*third_level_table).entries[vpn0])
+            let raw_ptr = &third_level_table.entries[vpn0] as *const PageTableEntry;
+
+            Ok(&*raw_ptr)
         }
     }
 }

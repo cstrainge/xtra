@@ -4,7 +4,7 @@
 use core::{ ops::{ Deref, Drop }, ptr::drop_in_place };
 
 use crate::{ arch::mmu::{ PAGE_SIZE, sv39::{ page_table::PageTable } },
-             memory::{ mmu::{ allocate_page, free_page } } };
+             memory::{ mmu::{ allocate_page, free_page, virtual_page_ptr::VirtualPagePtr } } };
 
 
 
@@ -125,6 +125,11 @@ pub struct PageTableEntry(u64);
 
 
 
+/// A smart pointer to a page table.
+type PageTablePtr = VirtualPagePtr<PageTable>;
+
+
+
 impl PageTableEntry
 {
     /// Create a new page table entry, ready for setting up with the appropriate flags.
@@ -143,12 +148,13 @@ impl PageTableEntry
     /// Create a new page table entry that's a pointer to another page table.
     pub fn new_page_table_ptr() -> Self
     {
-        let physical_address = allocate_page()
-            .expect("Failed to allocate a page for the page table entry.");
+        let physical_address = PageTablePtr::new_from_address(allocate_page()
+            .expect("Failed to allocate a page for the page table entry."))
+            .expect("Failed to create a page table pointer from the allocated page address.");
 
         let mut entry = Self::new();
 
-        entry.set_table_address(physical_address as *mut PageTable);
+        entry.set_table_address(physical_address);
         entry
     }
 
@@ -178,12 +184,12 @@ impl PageTableEntry
         // free that page table as well.
         if self.is_page_table_ptr()
         {
-            let page_table_ptr = self.get_table_address();
-            let page_address = page_table_ptr as usize;
+            let mut page_table_ptr = self.get_table_address();
+            let page_address = page_table_ptr.as_usize();
 
             unsafe
             {
-                drop_in_place(page_table_ptr);
+                drop_in_place(page_table_ptr.as_mut_ptr());
             }
 
             // Now free the memory that was allocated for the page table.
@@ -258,7 +264,9 @@ impl PageTableEntry
             0 => PageManagement::Manual,
             1 => PageManagement::Automatic,
             2 => PageManagement::CopyOnWrite,
-            _ => PageManagement::CowOwner
+            3 => PageManagement::CowOwner,
+            _ => panic!("Invalid page management value in page table entry: {:#x}",
+                        self.0 & PTE_RSW)
         }
     }
 
@@ -268,7 +276,7 @@ impl PageTableEntry
     ///
     /// The address returned is the physical address of the page table, which is aligned to a
     /// page boundary (4096 bytes).
-    pub fn get_table_address(&self) -> *mut PageTable
+    pub fn get_table_address(&self) -> PageTablePtr
     {
         assert!(self.is_page_table_ptr(),
                 "Page table entry is not a pointer to another page table.");
@@ -277,29 +285,30 @@ impl PageTableEntry
         let address = (((self.0 & (PTE_PPN_2 | PTE_PPN_1 | PTE_PPN_0)) >> 10) as usize) << 12;
 
         // Finally convert the raw address back to a pointer to a page table.
-        address as *mut PageTable
+        VirtualPagePtr::from_physical(address)
+            .expect("Failed to convert physical address to a page table pointer.")
     }
 
     /// Set this page table entry to point to another page table at the given address.
     ///
     /// This will panic if the address is not aligned to a page boundary (4096 bytes), or is too
     /// large for the SV39 page table format.
-    fn set_table_address(&mut self, address: *mut PageTable)
+    fn set_table_address(&mut self, address: PageTablePtr)
     {
         // Convert the address to a usize for storing into the entry.
-        let address = address as usize;
+        let address = address.as_physical_address();
 
         // Ensure the address is aligned to a page boundary.
         assert!(address % PAGE_SIZE == 0,
-                "Page table address {} is not aligned to a page boundary.",
+                "Page table address {:#x} is not aligned to a page boundary.",
                 address);
 
         // Convert to page number.
         let address = (address >> 12) as u64;
 
-        // A Sv39 PPN must fit in 44 bits
+        // A Sv39 PPN must fit in 44 bits.
         assert!(address <= 0x003F_FFFF_FFFF,
-               "Page table address {} is too large for Sv39.",
+               "Page table address {:#x} is too large for Sv39.",
                address);
 
         // Clear the reserved bits and the access bits. The access bits are not valid when the entry

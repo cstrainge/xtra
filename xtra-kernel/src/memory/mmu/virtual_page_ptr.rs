@@ -119,15 +119,18 @@ pub fn set_kernel_in_virtual_mode()
 
 
 
-/// TODO: Make this a kernel configuration option so that we can change the virtual base offset at
-///       compile time.
-///
 /// The base virtual address for the kernel's physical free page management. All free pages in the
 /// system will be mapped into this virtual address space so that the kernel can still access the
 /// physical pages directly as needed. For example mapping a page into an address space.
 ///
-/// TODO: Right now we are only allowing for 4GB of actual RAM, we need to make this computed at
-///       runtime based on the system's memory layout.
+/// This is computed during the kernel's MMU initialization and is used to map all physical pages
+/// into the kernel's virtual address space.
+///
+/// We want to minimize the amount of address space used but are also constrained by the underlying
+/// architecture's maximum addressable space. Many architectures have a limit that's far below what
+/// a 64-bit address space could conceptually support.
+///
+/// For example, the RISC-V 64-bit architecture has a maximum addressable space of 512GB.
 static VIRTUAL_BASE_OFFSET: AtomicUsize  = AtomicUsize::new(0);
 
 
@@ -280,7 +283,7 @@ impl<T> VirtualPagePtr<T>
     /// virtual address space of the kernel.
     ///
     /// If the address isn't valid then this will return an error instead.
-    fn from_virtual(address: usize) -> Result<Self>
+    pub fn from_virtual(address: usize) -> Result<Self>
     {
 
         // Check if the address is properly aligned to a page boundary.
@@ -323,7 +326,7 @@ impl<T> VirtualPagePtr<T>
     /// physical address space of the system.
     ///
     /// If the address isn't valid then this will return an error instead.
-    fn from_physical(address: usize) -> Result<Self>
+    pub fn from_physical(address: usize) -> Result<Self>
     {
         // Is the new address page aligned?
         if address % PAGE_SIZE != 0
@@ -385,15 +388,34 @@ impl<T> VirtualPagePtr<T>
 
 impl<T: ?Sized> VirtualPagePtr<T>
 {
+    /// Get the raw pointer as an address, either virtual or physical depending on the kernel's
+    /// current address mode.
     pub fn as_usize(&self) -> usize
     {
-        let mut raw_size = self.raw_ptr as *const u8 as usize;
-
-        if !is_kernel_in_virtual_mode()
+        /// Convert a virtual address to a physical address. Should only be called during boot time
+        /// when the kernel is still in physical address mode.
+        ///
+        /// So we hint to the compiler that this function should only be run rarely.
+        #[cold]
+        fn devirtualize(address: usize) -> usize
         {
-            raw_size -= virtual_base_offset();
+            // Devirtualize the address by subtracting the virtual base offset.
+            address - virtual_base_offset()
         }
 
+        // Convert the raw pointer to an address. Then check to see if the conversion is needed or
+        // not.
+        let raw_size = self.raw_ptr as *const u8 as usize;
+        let mut raw_size = if is_kernel_in_virtual_mode()
+            {
+                raw_size
+            }
+            else
+            {
+                devirtualize(raw_size)
+            };
+
+        // Give the caller what they want.
         raw_size
     }
 
