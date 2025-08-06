@@ -173,7 +173,7 @@ pub fn convert_to_kernel_address_space()
     // Switch the MMU to use the kernel's address space.
     unsafe
     {
-        if let Some(ref kernel_address_space) = KERNEL_ADDRESS_SPACE
+        if let Some(ref mut kernel_address_space) = KERNEL_ADDRESS_SPACE
         {
             kernel_address_space.make_current();
         }

@@ -13,7 +13,7 @@
 // The page table also supports iterating over all the allocated pages in the page table, skipping
 // all invalid or empty entries in the page table(s).
 
-use core::{ fmt::Write, mem::size_of };
+use core::{ arch::asm, fmt::Write, mem::size_of };
 
 use crate::{ arch::mmu::{ PAGE_SIZE,
                           sv39::{ page_table_entry::PageTableEntry,
@@ -34,6 +34,12 @@ pub use crate::arch::mmu::sv39::page_table_entry::PageManagement;
 /// specification. Each entry is 8 bytes, so the total size of a page table is
 /// 512 * 8 = 4096 bytes (4KB), which is the standard page size for RISC-V 64-bit systems.
 pub const PAGE_TABLE_SIZE: usize = 512;
+
+
+
+/// The bit we need to set in the SATP register to indicate that we are using the SV39 page table
+/// format for the Page Table pointer.
+const SATP_MODE_SV39: usize = 8 << 60;
 
 
 
@@ -100,11 +106,33 @@ impl PageTable
         page_table
     }
 
-    /// Get an immutable iterator for all of the pages mapped in the page table.
-    // pub fn iter(&self) -> PageTableIterator<'_>
-    // {
-    //     PageTableIterator::new(self)
-    // }
+    /// Set this page table to be the current page table for the current process running on the
+    /// current CPU.
+    pub fn make_current(&mut self)
+    {
+        // Get our own raw pointer. We'll need to convert this potentially virtual address into a
+        // physical address so that we can set the page table pointer in the CPU's MMU.
+        let page_table_ptr = self as *mut Self;
+        let mut page_table_ptr = VirtualPagePtr::new(page_table_ptr)
+            .expect("Failed to convert page table pointer to virtual page pointer")
+            .as_physical_address();
+
+        // Convert the physical address into a page table pointer by shifting it right by 12 bits
+        // and setting the ASID bit to indicate that this is a page table pointer.
+        page_table_ptr = page_table_ptr >> 12 | SATP_MODE_SV39;
+
+        unsafe
+        {
+            asm!
+            (
+                "csrw satp, {satp_value}",
+                "sfence.vma",
+
+                satp_value = in(reg) page_table_ptr,
+                options(nostack, nomem, preserves_flags)
+            );
+        }
+    }
 
 
     /// Map a physical page of RAM into an address space at the given virtual address.

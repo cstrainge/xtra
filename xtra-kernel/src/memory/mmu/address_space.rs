@@ -204,9 +204,10 @@ impl AddressSpace
     }
 
     /// Make this address space the current address space for the current core.
-    pub fn make_current(&self)
+    pub fn make_current(&mut self)
     {
         // Switch the MMU to use this address space.
+        self.page_table.make_current();
     }
 
     /// Allocate a page of memory from the free list and map it into an address space at the given

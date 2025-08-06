@@ -16,6 +16,7 @@
     "rust-analyzer.completion.autoimport.enable": false,
 
     "cSpell.words": [
+        "ASID",
         "auipc",
         "bootable",
         "Boxable",
@@ -59,6 +60,8 @@
         "rodata",
         "rustc",
         "rustflags",
+        "satp",
+        "sfence",
         "shentsize",
         "shnum",
         "shoff",
