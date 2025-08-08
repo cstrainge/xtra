@@ -7,7 +7,10 @@
 
 use core::{ any::type_name, ops::{ Deref, DerefMut, Drop }, ptr::drop_in_place };
 
-use crate::memory::{ mmu::{ allocate_page, free_page, virtual_page_ptr::VirtualPagePtr },
+use crate::memory::{ mmu::{ allocate_page,
+                            free_page,
+                            SimplePagePtr,
+                            virtual_page_ptr::VirtualPagePtr },
                      PAGE_SIZE };
 
 
@@ -58,6 +61,7 @@ impl<T> PageBox<T>
                 type_name::<T>());
 
         let page_address = page_address.unwrap();
+        let page_address = page_address.as_usize();
 
         // Create a virtual page pointer from the allocated page address.
         let mut pointer = VirtualPagePtr::new_from_address(page_address)
@@ -131,7 +135,8 @@ impl<T: ?Sized> Drop for PageBox<T>
             let page_address = usize::from(&self.pointer);
 
             drop_in_place(self.pointer.as_mut_ptr());
-            free_page(page_address);
+            free_page(SimplePagePtr::new_from_address(page_address)
+                .expect("Failed to create a simple page pointer from the page address."));
         }
     }
 }

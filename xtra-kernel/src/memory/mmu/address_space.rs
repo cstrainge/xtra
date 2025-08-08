@@ -14,6 +14,7 @@ use crate::{ arch::mmu::{ page_table::{ PageManagement, PageTable } },
                               get_system_memory_layout,
                               page_box::PageBox,
                               permissions::Permissions,
+                              SimplePagePtr,
                               virtual_page_ptr::virtualize_address },
                      PAGE_SIZE } };
 
@@ -231,7 +232,10 @@ impl AddressSpace
         // given permissions. Mark the page as automatically managed so that it will be freed
         // back to the free page list when it is unmapped.
         let result = self.page_table
-                         .map_page(virtual_address, page, permissions, PageManagement::Automatic);
+                         .map_page(virtual_address,
+                                   page.as_physical_address(),
+                                   permissions,
+                                   PageManagement::Automatic);
 
         // If the mapping failed then we need to free the page back to the free page list so that
         // we don't leak the page.
@@ -266,7 +270,8 @@ impl AddressSpace
         {
             // If the page wasn't owned by the page table then need to free it now. The free page
             // list has it's own lock so we don't need to lock the address space again.
-            free_page(page);
+            free_page(SimplePagePtr::new_from_address(page)
+                .expect("Failed to create a simple page pointer from the page address."));
         }
 
         Ok(())

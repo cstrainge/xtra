@@ -4,7 +4,10 @@
 use core::{ ops::{ Deref, Drop }, ptr::drop_in_place };
 
 use crate::{ arch::mmu::{ PAGE_SIZE, sv39::{ page_table::PageTable } },
-             memory::{ mmu::{ allocate_page, free_page, virtual_page_ptr::VirtualPagePtr } } };
+             memory::{ mmu::{ allocate_page,
+                              free_page,
+                              SimplePagePtr,
+                              virtual_page_ptr::VirtualPagePtr } } };
 
 
 
@@ -148,10 +151,17 @@ impl PageTableEntry
     /// Create a new page table entry that's a pointer to another page table.
     pub fn new_page_table_ptr() -> Self
     {
-        let physical_address = PageTablePtr::new_from_address(allocate_page()
-            .expect("Failed to allocate a page for the page table entry."))
+        // Allocate a page and convert it ot a raw pointer.
+        let raw_address = allocate_page()
+            .expect("Failed to allocate a page for the page table entry.")
+            .as_usize();
+
+        // Create a new page table structure inside of that newly allocated page.
+        let physical_address = PageTablePtr::new_from_address(raw_address)
             .expect("Failed to create a page table pointer from the allocated page address.");
 
+        // Construct the new page table entry and encode the new page table pointer into it. Then
+        // return the page table entry to the caller.
         let mut entry = Self::new();
 
         entry.set_table_address(physical_address);
@@ -192,8 +202,9 @@ impl PageTableEntry
                 drop_in_place(page_table_ptr.as_mut_ptr());
             }
 
-            // Now free the memory that was allocated for the page table.
-            free_page(page_address);
+            // Now return the memory back to the free page list.
+            free_page(SimplePagePtr::new_from_address(page_address)
+                .expect("Failed to create a simple page pointer from the page table address."));
         }
         else if    self.is_leaf()
                 && self.get_page_management() == PageManagement::Automatic
@@ -205,7 +216,8 @@ impl PageTableEntry
             // The reason for this check is that non-owned pages can be mapped into an address space
             // by the kernel. For example, shared memory regions or other kernel-managed pages.
             let physical_address = self.get_physical_address();
-            free_page(physical_address);
+            free_page(SimplePagePtr::new_from_address(physical_address)
+                .expect("Failed to create a simple page pointer from the physical address."));
         }
 
         // Clear all bits, including the valid bit.

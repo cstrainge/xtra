@@ -367,7 +367,7 @@ impl<T> VirtualPagePtr<T>
     {
         // Check if the address is within the valid range of virtual addresses.
            address >= virtual_base_offset()
-        && address <= HIGHEST_VIRTUAL_ADDRESS
+        && address < HIGHEST_VIRTUAL_ADDRESS
     }
 
     /// Check if the given address is within the valid range of physical addresses.

@@ -234,7 +234,7 @@ pub extern "C" fn main(core_index: usize, device_tree_ptr: *const u8) -> !
         }
 
         // Let the world know we're running.
-        println!("HCore {:02} is now running.", core_index);
+        println!("Core {:02} is now running.", core_index);
 
         // We know that the memory manager has been initialized by the first hart, so we can safely
         // switch to the kernel address space and start running the scheduler.

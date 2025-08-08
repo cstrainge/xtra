@@ -13,7 +13,7 @@
 /// allocations. This means that the free page list is intrusive and lives within the pages it
 /// manages. This is a low level module and should be used with care.
 
-use core::{ mem::size_of, slice::from_raw_parts_mut };
+use core::mem::size_of;
 
 use crate::memory::{ PAGE_SIZE,
                      kernel::KernelMemoryLayout,
@@ -22,9 +22,46 @@ use crate::memory::{ PAGE_SIZE,
 
 
 
+/// A simple type alias for a page of data, we just treat it as a simple array of bytes.
+pub type PageData = [u8; PAGE_SIZE];
+
+
+
+/// When dealing with raw pages of memory we will dole out pointers to pages. We use a
+/// VirtualPagePtr here because the kernel my be running in physical or virtual mode and we need
+/// to be able to handle both cases.
+pub type SimplePagePtr = VirtualPagePtr<PageData>;
+
+
+
+/// Wrapper for a set of contiguous pages returned from the `FreePageList`.
+#[derive(Clone, Copy)]
+pub struct ContiguousPages
+{
+    /// Pointer to the first page in the set of contiguous pages.
+    pub head: SimplePagePtr,
+
+    /// Count of pages that were actually allocated in the set.
+    pub count: usize
+}
+
+
+
+impl ContiguousPages
+{
+    /// Create a new set of contiguous pages.
+    pub fn new(head: SimplePagePtr, count: usize) -> Self
+    {
+        Self { head, count }
+    }
+}
+
+
+
 /// The bookkeeping for the free pages are kept within the page itself because that memory isn't
 /// being used for anything else, and so that frees up any constraints on how many free pages we can
 /// keep track of at any given time.
+#[repr(C)]
 #[derive(Clone, Copy, PartialEq, Eq)]
 struct FreeMemoryPage
 {
@@ -45,6 +82,18 @@ type FreeMemoryPagePtr = VirtualPagePtr<FreeMemoryPage>;
 
 
 
+// Make sure that our assumptions about the size of a page are correct at compile time.
+const _: () =
+    {
+        assert!(PAGE_SIZE % size_of::<usize>() == 0,
+                "PAGE_SIZE must be a multiple of usize size");
+
+        assert!(PAGE_SIZE >= size_of::<FreeMemoryPage>(),
+                "PAGE_SIZE must be at least as large as FreeMemoryPage");
+    };
+
+
+
 impl FreeMemoryPage
 {
     /// Create a new memory page structure at the given address with the given previous and next
@@ -56,50 +105,19 @@ impl FreeMemoryPage
     /// Needless to say, this is a low level operation and should be used with care. Care must be
     /// taken to ensure that the address is the proper start of a page in memory and that the page
     /// is actually free.
-    pub fn new(address: usize,
+    pub fn new(mut page_ptr: SimplePagePtr,
                prev_page: Option<FreeMemoryPagePtr>,
                next_page: Option<FreeMemoryPagePtr>) -> FreeMemoryPagePtr
     {
-        // Make sure that the page address makes sense. And the base integer size is aligned to the
-        // page size. We also make sure that our book-keeping structure will safely fit within a
-        // given page.
-        assert!(address % PAGE_SIZE == 0,
-                "Address must be aligned to page boundary, got 0x{:x} instead.",
-                address);
+        // First clear out the page to ensure that there is no stale data in it.
+        page_ptr.fill(0);
 
-        assert!(PAGE_SIZE % size_of::<usize>() == 0,
-                "PAGE_SIZE must be a multiple of usize size, got {} instead.",
-                PAGE_SIZE);
+        // Convert the page pointer to a FreeMemoryPagePtr.
+        let address = page_ptr.as_usize();
+        let mut page_ptr = FreeMemoryPagePtr::try_from(address)
+            .expect("Failed to create FreeMemoryPagePtr from address.");
 
-        assert!(PAGE_SIZE >= size_of::<FreeMemoryPage>(),
-                "PAGE_SIZE must be at least as large as FreeMemoryPage size, ({},) got {} instead.",
-                size_of::<FreeMemoryPage>(),
-                PAGE_SIZE);
-
-        // Zero out the page to ensure that it is clean and ready for use. We use native word size
-        // writes to zero out the page. This is more efficient than writing byte by byte. Also many
-        // systems don't allow misaligned writes so this avoids the compiler generating a lot of
-        // extra code to simulate writing individual bytes.
-
-        let page_slice = unsafe { from_raw_parts_mut(address as *mut usize,
-                                                     PAGE_SIZE / size_of::<usize>()) };
-
-        for chunk in page_slice.iter_mut()
-        {
-            *chunk = 0;
-        }
-
-        // Get a pointer to the new page stricture within the page itself.  Then we can create the
-        // FreeMemoryPage structure at that address.
-        let page_ptr = FreeMemoryPagePtr::try_from(address);
-
-        if let Err(e) = page_ptr
-        {
-            panic!("Failed to create FreeMemoryPagePtr from address 0x{:x}: {}", address, e);
-        }
-
-        let mut page_ptr = page_ptr.unwrap();
-
+        // Construct the FreeMemoryPage structure in place at the start of the page.
         *page_ptr = FreeMemoryPage
             {
                 address: page_ptr.as_physical_address(),
@@ -174,8 +192,8 @@ impl FreePageList
             assert!(first_page_ptr.prev_page.is_none(),
                     "First page pointer must not have a previous page when adding a new page.");
 
-            assert!(page.address > first_page_ptr.address,
-                    "New page address must be greater than the first page address. \
+            assert!(page.address < first_page_ptr.address,
+                    "New page address must be lesser than the first page address. \
                     Trying to add page at 0x{:x} before first page at 0x{:x}.",
                     page.address,
                     first_page_ptr.address);
@@ -293,10 +311,11 @@ impl FreePageList
                             mut last_page: FreeMemoryPagePtr)
     {
         // Validate the incoming list of pages.
-        assert!(Self::pages_are_contiguous(first_page, last_page),
-                "Pages are not contiguous or in order. First page at 0x{:x}, last page at 0x{:x}.",
-                first_page.address,
-                last_page.address);
+        debug_assert!(Self::pages_are_contiguous(first_page, last_page),
+                      "Pages are not contiguous or in order. First page at 0x{:x}, last page at \
+                      0x{:x}.",
+                      first_page.address,
+                      last_page.address);
 
         // If the list is empty, the job is pretty easy. The new list is the whole list.
         if self.is_empty()
@@ -310,10 +329,12 @@ impl FreePageList
 
         let mut self_first_page = self.first_page.unwrap();
 
-        if self_first_page.address > first_page.address
+        // Are we inserting the new list at the beginning of the existing list?
+        if first_page.address < self_first_page.address
         {
-            assert!(self_first_page.address >= last_page.address,
-                    "Trying to insert a duplicate page in a page list at 0x{:x}.",
+            // Make sure that the range of new pages doesn't overlap with the existing first page.
+            assert!(last_page.address < self_first_page.address,
+                    "Overlapping range at 0x{:x}.",
                     last_page.address);
 
             // Insert the new list at the beginning of the existing list.
@@ -321,9 +342,6 @@ impl FreePageList
 
             last_page.next_page = Some(self_first_page);
             self_first_page.prev_page = Some(last_page);
-
-            assert!(self_first_page.prev_page.is_none(),
-                    "First page in the list should not have a previous page, but it does.");
 
             return;
         }
@@ -336,9 +354,10 @@ impl FreePageList
 
         if self_last_page.address < first_page.address
         {
-            assert!(self_last_page.address <= last_page.address,
-                    "Trying to insert a duplicate page in a page list at 0x{:x}.",
-                    last_page.address);
+            // Strict: new run must start strictly after current tail (no overlap)
+            assert!(self_last_page.address + PAGE_SIZE <= first_page.address,
+                    "Overlapping range at 0x{:x}.",
+                    first_page.address);
 
             // Insert the new list at the end of the existing list.
             self_last_page.next_page = Some(first_page);
@@ -394,11 +413,29 @@ impl FreePageList
             return None;
         }
 
-        // Simply pop the first page from the lest and make the next page, (if any) the new top of
-        // the list.
-        let page_ptr = self.first_page.unwrap();
+        // We clearly have at least one page in the list, so remove the first page. And set the new
+        // head of the list to be whatever was the second page in the list, (if any.)
+        let mut page_ptr = self.first_page.unwrap();
 
         self.first_page = page_ptr.next_page;
+
+        // Check to see if there was a next page after the one we removed. If there was, then we
+        // need to update its previous page pointer to point to None.
+        if let Some(mut new_head) = self.first_page
+        {
+            new_head.prev_page = None;
+        }
+        else
+        {
+            // There was no next page, so the list is now empty and the last page pointer should
+            // reflect this.
+            self.last_page = None;
+        }
+
+        // Make sure that the removed page doesn't refer to any other pages. It's not part of the
+        // chain anymore. Then return the page pointer to the caller.
+        page_ptr.next_page = None;
+
         Some(page_ptr)
     }
 
@@ -756,8 +793,11 @@ pub fn init_free_page_list(kernel_memory: &KernelMemoryLayout,
                 if    !is_kernel_page(page_address, kernel_memory)
                    && !is_mmio_page(page_address, system_memory)
                 {
+                    let simple_page_ptr = SimplePagePtr::try_from(page_address)
+                        .expect("Failed to create SimplePagePtr from address.");
+
                     // Add the page to the end of the free page list.
-                    let page_ptr = FreeMemoryPage::new(page_address, None, None);
+                    let page_ptr = FreeMemoryPage::new(simple_page_ptr, None, None);
                     let free_page_list = &raw mut FREE_PAGE_LIST;
 
                     unsafe
@@ -773,15 +813,11 @@ pub fn init_free_page_list(kernel_memory: &KernelMemoryLayout,
 
 
 /// Add a free page to the free page list.
-pub fn add_free_page(page_address: usize)
+pub fn add_free_page(page_ptr: SimplePagePtr)
 {
-    assert!(page_address % PAGE_SIZE == 0,
-            "Page address must be aligned to page boundary, got 0x{:x}.",
-            page_address);
-
     unsafe
     {
-        let page_ptr = FreeMemoryPage::new(page_address, None, None);
+        let page_ptr = FreeMemoryPage::new(page_ptr, None, None);
         let free_page_list = &raw mut FREE_PAGE_LIST;
 
         (*free_page_list).insert_page(page_ptr);
@@ -791,40 +827,50 @@ pub fn add_free_page(page_address: usize)
 
 
 /// Add a number of contiguous free pages to the free page list.
-pub fn add_n_free_pages(address: usize, count: usize)
+pub fn add_n_free_pages(pages: ContiguousPages)
 {
-    // Validate the incoming address and count.
-    assert!(address % PAGE_SIZE == 0,
-            "Address must be aligned to page boundary, got 0x{:x}.",
-            address);
+    // Make sure we're not trying to add zero pages.
+    assert!(pages.count > 0, "Adding free pages, count must be greater than zero.");
 
-    assert!(count > 0, "Count must be greater than zero, got {}.", count);
+    // Now we need to convert the contiguous pages into a linked list of free pages.
+    let base_address = pages.head.as_usize();
+    let count = pages.count;
 
+    // Create the new head of the free page list from the simple page pointer. Then we keep track of
+    // the current page we're working on. Eventually the current page will be the last page of the
+    // list of pages we're adding.
+    let head_page_ptr = FreeMemoryPage::new(pages.head, None, None);
+    let mut current_page_ptr = head_page_ptr;
+
+    // Now that we have the first page setup we can iterate through the rest of the pages and create
+    // the FreeMemoryPage structures in them. We will use the base address and increment it by the
+    // page size for each page we create.
+    for i in 1..count
+    {
+        // Make sure that the index is not too large to avoid overflow when multiplying by
+        // PAGE_SIZE.
+        debug_assert!(i <= (usize::MAX / PAGE_SIZE),
+                      "Index too large for PAGE_SIZE multiplication");
+
+        // Construct a page pointer from the current raw address.
+        let address = base_address + (i * PAGE_SIZE);
+        let page_ptr = SimplePagePtr::try_from(address)
+            .expect("Failed to create SimplePagePtr from address.");
+
+        // Take that page pointer and create the FreeMemoryPage structure in it.
+        let new_page_ptr = FreeMemoryPage::new(page_ptr, Some(current_page_ptr), None);
+
+        // Add the new page bookkeeping to the list and move onto the next page to add.
+        current_page_ptr.next_page = Some(new_page_ptr);
+        current_page_ptr = new_page_ptr;
+    }
+
+    // Now we have our list of free pages, we can add it to the official free page list.
     unsafe
     {
-        // Create the head of the new list.
-        let free_page_head = FreeMemoryPage::new(address, None, None);
-
-        let mut current_page_ptr = free_page_head;
-
-        // Iterate over the number of pages and create the linked list of free pages.
-        for index in 1..count
-        {
-            // Calculate the address of the page based on the index and the base address.
-            let page_address = address + (index * PAGE_SIZE);
-            let mut new_page_ptr = FreeMemoryPage::new(page_address, None, None);
-
-            // Link the new page into the list.
-            current_page_ptr.next_page = Some(new_page_ptr);
-            new_page_ptr.prev_page = Some(current_page_ptr);
-
-            current_page_ptr = new_page_ptr;
-        }
-
-        // Now we have our list of free pages, we can add it to the official free page list.
         let free_page_list = &raw mut FREE_PAGE_LIST;
 
-        (*free_page_list).insert_page_list(free_page_head, current_page_ptr);
+        (*free_page_list).insert_page_list(head_page_ptr, current_page_ptr);
     }
 }
 
@@ -832,11 +878,12 @@ pub fn add_n_free_pages(address: usize, count: usize)
 
 /// Attempt to pull a free page from the free page list.
 ///
-/// This will return None if there are no free pages available in the list.
+/// This will return None if there are no free pages available in the list otherwise it will return
+/// a SimplePagePtr to the free page.
 ///
 /// This function makes no guarantees about the page's address other than it is a valid page as
 /// given to the list from the memory subsystem.
-pub fn remove_free_page() -> Option<usize>
+pub fn remove_free_page() -> Option<SimplePagePtr>
 {
     // Get the free page list and attempt to remove a page from it.
     let free_page_list = &raw mut FREE_PAGE_LIST;
@@ -848,11 +895,15 @@ pub fn remove_free_page() -> Option<usize>
         unsafe
         {
             // We did, so extract the address from the page pointer and clear the page's internal
-            // bookkeeping so that we don't leak any internal data. Then return the address of the page.
+            // bookkeeping so that we don't leak any internal data. Then return the address of the
+            // page.
             let address = page_ptr.address;
-
             page_ptr.clear();
-            Some(address)
+
+            let page = SimplePagePtr::from_physical(address)
+                .expect("Failed to create SimplePagePtr from physical address.");
+
+            Some(page)
         }
     }
     else
@@ -870,7 +921,7 @@ pub fn remove_free_page() -> Option<usize>
 ///
 /// This function makes no guarantees about the pages' addresses other than they are valid pages as
 /// given to the list from the memory subsystem.
-pub fn remove_n_free_pages(count: usize) -> Option<usize>
+pub fn remove_n_free_pages(count: usize) -> Option<ContiguousPages>
 {
     // Ok, get a reference to the free list and try to extract the requested number of pages.
     let free_page_list = &raw mut FREE_PAGE_LIST;
@@ -895,8 +946,12 @@ pub fn remove_n_free_pages(count: usize) -> Option<usize>
             page_ptr.clear();
         }
 
-        // Return the address of the first page in the list.
-        Some(address)
+        // Return the address of the first page in the list along with the count.
+        let page = SimplePagePtr::from_physical(address)
+            .expect("Failed to create SimplePagePtr from physical address.");
+
+        let contiguous_pages = ContiguousPages::new(page, count);
+        Some(contiguous_pages)
     }
     else
     {

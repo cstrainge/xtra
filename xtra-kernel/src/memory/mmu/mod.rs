@@ -61,6 +61,11 @@ use crate::memory::mmu::{ address_space::{ AddressSpace },
 
 
 
+// Reexport some types we're using in our public API.
+pub use crate::memory::mmu::free_page_list::{ ContiguousPages, PageData, SimplePagePtr };
+
+
+
 /// The global kernel address space. This is the address space that is used by the kernel and idle
 /// process. It is initialized during the kernel's boot process.
 static mut KERNEL_ADDRESS_SPACE: Option<AddressSpace> = None;
@@ -202,7 +207,7 @@ pub fn convert_to_kernel_address_space()
 /// does not manage mapping the page into an address space.
 ///
 /// This function is used to allocate pages of memory for the kernel's internal data structures.
-pub fn allocate_page() -> Option<usize>
+pub fn allocate_page() -> Option<SimplePagePtr>
 {
     let _guard = LockGuard::new(&FREE_PAGE_LOCK);
 
@@ -223,11 +228,11 @@ pub fn allocate_page() -> Option<usize>
 /// This function is used to free pages of memory that were allocated for the kernel's internal
 /// data structures. If you wish to free a page of memory from an address space you should use the
 /// appropriate method on the `AddressSpace` struct.
-pub fn free_page(physical_page_address: usize)
+pub fn free_page(page: SimplePagePtr)
 {
     let _guard = LockGuard::new(&FREE_PAGE_LOCK);
 
-    free_page_list::add_free_page(physical_page_address);
+    free_page_list::add_free_page(page);
 }
 
 
@@ -239,7 +244,7 @@ pub fn free_page(physical_page_address: usize)
 /// contiguously allocated, then this function will return `None`.
 ///
 /// Otherwise the physical address of the first page in the set will be returned.
-pub fn allocate_n_pages(count: usize) -> Option<usize>
+pub fn allocate_n_pages(count: usize) -> Option<ContiguousPages>
 {
     let _guard = LockGuard::new(&FREE_PAGE_LOCK);
 
@@ -250,9 +255,9 @@ pub fn allocate_n_pages(count: usize) -> Option<usize>
 
 /// Free a set of contiguous pages of physical memory and return them back to the free page list for
 /// later reallocation.
-pub fn free_n_pages(physical_page_address: usize, count: usize)
+pub fn free_n_pages(contiguous_pages: ContiguousPages)
 {
     let _guard = LockGuard::new(&FREE_PAGE_LOCK);
 
-    free_page_list::add_n_free_pages(physical_page_address, count);
+    free_page_list::add_n_free_pages(contiguous_pages);
 }
