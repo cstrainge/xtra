@@ -164,6 +164,13 @@ pub unsafe extern "C" fn _start() -> !
 
         "add t0, t0, t1",              // t0 = &STACKS[hart_id * STACK_SIZE].
         "li t1, {stack_size}",         // t1 = STACK_SIZE.
+
+                                       // We're setting the stack pointer to the top of stack so
+                                       // that it will grow down towards zero.
+                                       // We set sp to one-past the end of this hart's stack region
+                                       // (the top), so pushes/allocas move toward lower addresses
+                                       // within the allocated slice.
+
         "add t0, t0, t1",              // t0 = &STACKS[(hart_id+1)*STACK_SIZE] + STACK_SIZE.
 
         "mv sp, t0",                   // set sp to top of stack for this hart.
