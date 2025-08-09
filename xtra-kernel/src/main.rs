@@ -115,7 +115,7 @@ static mut STACKS: [u8; STACK_SIZE * MAX_CORES] = [0; STACK_SIZE * MAX_CORES];
 
 /// Keep track of whether the system has booted or not. This is used to ensure that only the first
 /// hart runs the boot process and the others wait for it to complete.
-static mut SYSTEM_BOOTED: AtomicBool = AtomicBool::new(false);
+static SYSTEM_BOOTED: AtomicBool = AtomicBool::new(false);
 
 
 
@@ -123,9 +123,7 @@ static mut SYSTEM_BOOTED: AtomicBool = AtomicBool::new(false);
 /// boot process and the others wait for it to complete.
 fn system_booted() -> bool
 {
-    let booted_flag = unsafe { &mut *addr_of_mut!(SYSTEM_BOOTED) };
-
-    booted_flag.load(Ordering::Acquire)
+    SYSTEM_BOOTED.load(Ordering::Acquire)
 }
 
 
@@ -134,9 +132,7 @@ fn system_booted() -> bool
 /// This is called by the first hart after it has completed the boot process.
 fn set_system_booted()
 {
-    let booted_flag = unsafe { &mut *addr_of_mut!(SYSTEM_BOOTED) };
-
-    booted_flag.store(true, Ordering::Release);
+    SYSTEM_BOOTED.store(true, Ordering::Release);
 }
 
 
