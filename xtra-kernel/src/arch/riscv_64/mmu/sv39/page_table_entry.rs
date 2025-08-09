@@ -232,7 +232,7 @@ impl PageTableEntry
             return false;
         }
 
-        if self.0 & (PTE_R & PTE_W & PTE_X) != 0
+        if self.0 & (PTE_R | PTE_W | PTE_X) != 0
         {
             // If the entry is readable, writable or executable then it cannot be a pointer to a
             // page table.
