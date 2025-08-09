@@ -5,7 +5,7 @@
 // The contained type must also fit withing exactly a single page of memory. The exact size of a
 // page is configured by the `PAGE_SIZE` constant in the `mmu` module.
 
-use core::{ any::type_name, ops::{ Deref, DerefMut, Drop }, ptr::drop_in_place };
+use core::{ any::type_name, mem::size_of, ops::{ Deref, DerefMut, Drop }, ptr::drop_in_place };
 
 use crate::memory::{ mmu::{ allocate_page,
                             free_page,
