@@ -220,6 +220,10 @@ impl AddressSpace
                          virtual_address: usize,
                          permissions: Permissions) -> Result<(), &'static str>
     {
+        assert!(virtual_address % PAGE_SIZE == 0,
+                "virtual_address must be page-aligned ({} bytes)",
+                PAGE_SIZE);
+
         // Attempt to allocate a page of memory from the free page list. The free page list
         // maintains its own lock so we don't need to lock the address space yet.
         let page = allocate_page()
