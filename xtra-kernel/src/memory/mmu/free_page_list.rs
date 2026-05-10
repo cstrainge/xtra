@@ -28,7 +28,7 @@ pub type PageData = [u8; PAGE_SIZE];
 
 
 /// When dealing with raw pages of memory we will dole out pointers to pages. We use a
-/// VirtualPagePtr here because the kernel my be running in physical or virtual mode and we need
+/// VirtualPagePtr here because the kernel may be running in physical or virtual mode and we need
 /// to be able to handle both cases.
 pub type SimplePagePtr = VirtualPagePtr<PageData>;
 

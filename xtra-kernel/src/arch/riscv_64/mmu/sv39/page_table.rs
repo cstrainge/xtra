@@ -108,7 +108,7 @@ impl PageTable
 
     /// Set this page table to be the current page table for the current process running on the
     /// current CPU.
-    pub fn make_current(&mut self)
+    pub fn make_current(&mut self/*, asid: usize*/)
     {
         // Get our own raw pointer. We'll need to convert this potentially virtual address into a
         // physical address so that we can set the page table pointer in the CPU's MMU.
@@ -120,6 +120,10 @@ impl PageTable
         // Convert the physical address into a page table pointer by shifting it right by 12 bits
         // and setting the ASID bit to indicate that this is a page table pointer.
         page_table_ptr = page_table_ptr >> 12 | SATP_MODE_SV39;
+
+        // TODO: Set the asid!!
+        // let satp = (asid as usize) << 44 | (root_ppn << 0) | SATP_MODE_SV39;
+
 
         unsafe
         {
@@ -133,6 +137,32 @@ impl PageTable
             );
         }
     }
+
+
+    /*
+    pub fn invalidate_page(&self, vaddr: usize, asid: u16) {
+    unsafe {
+            asm!(
+                "sfence.vma {vaddr}, {asid}",
+                vaddr = in(reg) vaddr,
+                asid = in(reg) asid,
+                options(nostack, nomem, preserves_flags)
+            );
+        }
+    }
+
+    pub fn probe_asid_support() -> u8 {
+        // Try writing all 1s to ASID field, read back to see what sticks
+        unsafe {
+            let old_satp = read_csr!(satp);
+            write_csr!(satp, 0xFFFF_0000_0000_0000u64);
+            let test_satp = read_csr!(satp);
+            write_csr!(satp, old_satp);
+
+            ((test_satp >> 44) & 0xFFFF).count_ones() as u8
+        }
+    }
+     */
 
 
     /// Map a physical page of RAM into an address space at the given virtual address.

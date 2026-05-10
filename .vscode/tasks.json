@@ -1,0 +1,36 @@
+
+{
+    "version": "2.0.0",
+
+    "tasks":
+    [
+        {
+            "label": "QEMU Launch (Debug)",
+
+            "type": "shell",
+            "isBackground": true,
+
+            "command": "qemu-system-riscv64",
+
+            "args":
+            [
+                "-machine", "virt",
+                "-bios",    "none",
+                "-kernel",  "target/riscv64imac-unknown-none-elf/debug/xtra-kernel",
+                "-global",  "virtio-mmio.force-legacy=false",
+                "-drive",   "file=build/disk0.img,if=none,format=raw,id=x0",
+                "-device",  "virtio-blk-device,drive=x0,bus=virtio-mmio-bus.0",
+                "-serial",  "stdio",
+                "-display", "sdl",
+                "-smp",     "1",
+                "-m",       "2048M",
+                "-s",       "-S"
+            ],
+
+            "options":
+            {
+                "cwd": "${workspaceFolder}"
+            }
+        }
+    ]
+}

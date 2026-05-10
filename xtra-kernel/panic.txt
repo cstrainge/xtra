@@ -7,4 +7,4 @@
 ╚═╝     ╚═╝  ╚═╝╚═╝  ╚══╝╚═╝ ╚════╝╚═╝╚═╝
 
 A fatal error in the kernel has occurred.
-Halting the system and rebooting.
+Rebooting the system now.

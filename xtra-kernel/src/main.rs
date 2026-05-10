@@ -321,7 +321,7 @@ pub extern "C" fn main(core_index: usize, device_tree_ptr: *const u8) -> !
     //
     // This will allow init to run and it will take care of the rest of the boot sequence and get us
     // to a running system.
-    println!("Starting scheduler for hart {}.", core_index);
+    println!("Starting scheduler for hart {:02}.", core_index);
 
     let scheduler = Scheduler::new();
 

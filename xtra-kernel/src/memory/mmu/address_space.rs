@@ -220,6 +220,7 @@ impl AddressSpace
                          virtual_address: usize,
                          permissions: Permissions) -> Result<(), &'static str>
     {
+        // Make sure that the address makes sense.
         assert!(virtual_address % PAGE_SIZE == 0,
                 "virtual_address must be page-aligned ({} bytes)",
                 PAGE_SIZE);

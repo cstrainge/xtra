@@ -6,13 +6,18 @@ use core::fmt::{ self, Display, Formatter };
 
 
 
-// Represents a section of memory in the kernel layout,
+/// Represents a section of memory in the kernel layout,
 #[derive(Copy, Clone)]
 pub struct SectionLayout
 {
-    pub start: usize,  // Start address of the section.
-    pub end: usize,    // End address of the section.
-    pub size: usize    // Size of the section in bytes.
+    /// Start address of the section.
+    pub start: usize,
+
+    /// End address of the section.
+    pub end: usize,
+
+    /// Size of the section in bytes.
+    pub size: usize
 }
 
 

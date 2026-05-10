@@ -1,0 +1,34 @@
+
+{
+    "version": "0.2.0",
+
+    "configurations":
+    [
+        {
+            "name": "xtra-kernel (Debug)",
+            "type": "cppdbg",
+
+            "request": "launch",
+            "preLaunchTask": "QEMU Launch (Debug)",
+
+            "program": "${workspaceFolder}/target/riscv64imac-unknown-none-elf/debug/xtra-kernel",
+            "miDebuggerPath": "/usr/bin/gdb-multiarch",
+            "miDebuggerServerAddress": "localhost:1234",
+
+            "cwd": "${workspaceFolder}",
+
+            "stopAtEntry": false,
+
+            "MIMode": "gdb",
+
+            "setupCommands":
+            [
+                {
+                    "description": "Enable pretty-printing for gdb",
+                    "text": "-enable-pretty-printing",
+                    "ignoreFailures": true
+                }
+            ]
+        }
+    ]
+}

@@ -56,7 +56,7 @@ dd if=build/disk0-part1.img of=build/disk0.img bs=1M seek=33 conv=notrunc
 # ---- Run the OS in QEMU --------------------------------------------------------------------------
 
 # START_BIN="build/xtra-bootloader"
-START_BIN="target/riscv64imac-unknown-none-elf/debug/xtra-kernel"
+START_BIN="target/riscv64imac-unknown-none-elf/release/xtra-kernel"
 
 qemu-system-riscv64 \
     -machine virt \
@@ -67,5 +67,9 @@ qemu-system-riscv64 \
     -device virtio-blk-device,drive=x0,bus=virtio-mmio-bus.0 \
     -serial stdio \
     -display sdl \
-    -smp 1 \
+    -smp 4 \
     -m 2048M
+
+
+#    -monitor tcp::4444,server
+#    -append "root=/dev/vda2 rw" \
