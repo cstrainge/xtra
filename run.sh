@@ -4,15 +4,30 @@ set -euo pipefail
 
 
 
-# ---- Build the bootloader and the Kernel ---------------------------------------------------------
+# ---- Configure the build. ------------------------------------------------------------------------
 
-cargo build --target riscv64imac-unknown-none-elf --release
+# Default to release build if no argument is provided.
+BUILD_MODE=${1:-release}
+
+# Let the user know which build mode is being used.
+echo "Building the OS in $BUILD_MODE mode..."
+
+
+
+# ---- Build the bootloader and the Kernel. --------------------------------------------------------
+
+if [ "$BUILD_MODE" == "debug" ]
+then
+    cargo build --target riscv64imac-unknown-none-elf --workspace
+else
+    cargo build --target riscv64imac-unknown-none-elf --workspace --release
+fi
 
 mkdir -p build
-cp target/riscv64imac-unknown-none-elf/release/xtra-bootloader build/xtra-bootloader
+cp target/riscv64imac-unknown-none-elf/$BUILD_MODE/xtra-bootloader build/xtra-bootloader
 
 mkdir -p build/boot
-cp target/riscv64imac-unknown-none-elf/release/xtra-kernel build/boot/kernel.elf
+cp target/riscv64imac-unknown-none-elf/$BUILD_MODE/xtra-kernel build/boot/kernel.elf
 
 
 
@@ -30,7 +45,7 @@ mkdir -p build/sys-root/mnt
 
 
 
-# ---- Create the system disk images ---------------------------------------------------------------
+# ---- Create the system disk images. --------------------------------------------------------------
 
 # Create the partitioned disk image.
 dd if=/dev/zero of=build/disk0.img bs=1M count=1024
@@ -53,10 +68,10 @@ dd if=build/disk0-part1.img of=build/disk0.img bs=1M seek=33 conv=notrunc
 
 
 
-# ---- Run the OS in QEMU --------------------------------------------------------------------------
+# ---- Run the OS in QEMU. -------------------------------------------------------------------------
 
 # START_BIN="build/xtra-bootloader"
-START_BIN="target/riscv64imac-unknown-none-elf/release/xtra-kernel"
+START_BIN="target/riscv64imac-unknown-none-elf/$BUILD_MODE/xtra-kernel"
 
 qemu-system-riscv64 \
     -machine virt \
