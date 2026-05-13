@@ -8,7 +8,7 @@ use crate::{ fat32::FileStream, uart::Uart };
 
 
 
-// The 64-bit ELF header structure as defined in the ELF specification.
+/// The 64-bit ELF header structure as defined in the ELF specification.
 #[repr(C, packed)]
 pub struct Elf64Header
 {
@@ -30,7 +30,7 @@ pub struct Elf64Header
 
 
 
-// Elf header constants...
+/// Elf header constants...
 const ELF_MAGIC:   [u8; 4] = [0x7f, b'E', b'L', b'F'];
 
 const ELF_VERSION: u32     = 1;    // Original version of the ELF specification.
@@ -41,7 +41,7 @@ const EI_DATA:     u8      = 1;    // EI_DATA: 1 for little-endian.
 
 
 
-// Ensure the size of the ELF header is correct. This is a compile-time assertion.
+/// Ensure the size of the ELF header is correct. This is a compile-time assertion.
 const _ : () =
     {
         assert!(size_of::<Elf64Header>() == 64);
@@ -60,7 +60,7 @@ impl Elf64Header
         Ok(header)
     }
 
-    // Create a new blank ELF header with all fields zeroed.
+    /// Create a new blank ELF header with all fields zeroed.
     pub fn zeroed() -> Self
     {
         Elf64Header
@@ -82,37 +82,37 @@ impl Elf64Header
             }
     }
 
-    // Check to see if the magic number is valid.
+    /// Check to see if the magic number is valid.
     pub fn is_valid(&self) -> bool
     {
         self.e_ident[0..4] == ELF_MAGIC
     }
 
-    // Check if the version of the elf file is supported by this loader.
+    /// Check if the version of the elf file is supported by this loader.
     pub fn version_supported(&self) -> bool
     {
         self.e_version == ELF_VERSION
     }
 
-    // Does the elf file represent an executable?
+    /// Does the elf file represent an executable?
     pub fn is_executable(&self) -> bool
     {
         self.e_type == ET_EXEC
     }
 
-    // Was the elf file compiled for RISC-V architecture?
+    /// Was the elf file compiled for RISC-V architecture?
     pub fn is_riscv(&self) -> bool
     {
         self.e_machine == EM_RISCV
     }
 
-    // Is the elf file a 64-bit executable?
+    /// Is the elf file a 64-bit executable?
     pub fn is_64_bit(&self) -> bool
     {
         self.e_ident[4] == EI_CLASS_64
     }
 
-    // Was the elf file compiled in little-endian format?
+    /// Was the elf file compiled in little-endian format?
     pub fn is_little_endian(&self) -> bool
     {
         self.e_ident[5] == EI_DATA
@@ -125,14 +125,29 @@ impl Elf64Header
 #[derive(Clone, Copy)]
 pub struct Elf64ProgramHeader
 {
-    pub p_type: u32,     // Segment type.
-    pub p_flags: u32,    // Segment flags.
-    pub p_offset: u64,   // Offset in file.
-    pub p_vaddr: u64,    // Virtual address in memory.
-    pub p_paddr: u64,    // Physical address (ignore for user programs).
-    pub p_filesz: u64,   // Size in file.
-    pub p_memsz: u64,    // Size in memory.
-    pub p_align: u64     // Alignment.
+    /// Segment type.
+    pub p_type: u32,
+
+    /// Segment flags.
+    pub p_flags: u32,
+
+    /// Offset in file.
+    pub p_offset: u64,
+
+    /// Virtual address in memory.
+    pub p_vaddr: u64,
+
+    /// Physical address (ignore for user programs).
+    pub p_paddr: u64,
+
+    /// Size in file.
+    pub p_filesz: u64,
+
+    /// Size in memory.
+    pub p_memsz: u64,
+
+    /// Alignment.
+    pub p_align: u64
 }
 
 
@@ -152,22 +167,21 @@ const PF_R:       u32 = 0x4;  // Readable.
 
 
 
-// As before we make sure that the size of the program header is correct.
+/// As before we make sure that the size of the program header is correct.
 const _: () =
     {
         assert!(size_of::<Elf64ProgramHeader>() == 56);
     };
 
 
-
-const MAX_PROGRAM_HEADERS: usize = 8;  // Maximum number of program headers we support in a single
-                                       //  ELF file.
+/// Maximum number of program headers we support in a single ELF file.
+const MAX_PROGRAM_HEADERS: usize = 8;
 
 
 
 impl Elf64ProgramHeader
 {
-    // Read the program header from the file stream and return a new Elf64ProgramHeader instance.
+    /// Read the program header from the file stream and return a new Elf64ProgramHeader instance.
     pub fn new(file_stream: &mut FileStream) -> Result<Self, &'static str>
     {
         let mut header = Elf64ProgramHeader::zeroed();
@@ -176,7 +190,7 @@ impl Elf64ProgramHeader
         Ok(header)
     }
 
-    // Create a new blank program header with all fields zeroed.
+    /// Create a new blank program header with all fields zeroed.
     pub fn zeroed() -> Self
     {
         Elf64ProgramHeader
@@ -192,7 +206,7 @@ impl Elf64ProgramHeader
             }
     }
 
-    // Check if the segment is a loadable segment.
+    /// Check if the segment is a loadable segment.
     pub fn is_loadable(&self) -> bool
     {
         self.p_type == PT_LOAD
@@ -201,13 +215,19 @@ impl Elf64ProgramHeader
 
 
 
-// Define the function to execute the kernel. It's expected to take the hart ID and device tree
-// pointer as arguments and never return.
+/// Define the function to execute the kernel. It's expected to take the hart ID and device tree
+/// pointer as arguments and never return.
 type KernelEntryPoint = extern "C" fn(hart_id: usize, device_tree_ptr: *const u8) -> !;
 
 
 
-// Make sure the ELF file heder is valid and compiled for the architecture we are running on.
+/// The address of the kernel entry point in memory. This is set when we load the kernel elf file and
+/// is the address jumped to at kernel startup.
+static mut KERNEL_ENTRY_POINT: Option<KernelEntryPoint> = None;
+
+
+
+/// Make sure the ELF file heder is valid and compiled for the architecture we are running on.
 fn validate_elf_header(header: &Elf64Header) -> Result<(), &'static str>
 {
     if !header.is_valid()
@@ -245,6 +265,9 @@ fn validate_elf_header(header: &Elf64Header) -> Result<(), &'static str>
 
 
 
+/// Load a single loadable segment from the ELF file into memory at the specified virtual address.
+/// This function assumes that the file stream is already positioned at the start of the segment's
+/// data in the file.
 fn load_segment(program_header: &Elf64ProgramHeader,
                 file_stream: &mut FileStream) -> Result<(), &'static str>
 {
@@ -280,7 +303,7 @@ fn load_segment(program_header: &Elf64ProgramHeader,
 
 
 
-// Stream all loadable segments from the ELF file to the specified load address in memory.
+/// Stream all loadable segments from the ELF file to the specified load address in memory.
 fn stream_kernel_segments(uart: &Uart,
                           load_address: *const u8,
                           elf_header: &Elf64Header,
@@ -361,16 +384,10 @@ fn stream_kernel_segments(uart: &Uart,
 
 
 
-// Load the kernel from the file stream and execute it at the given memory address. We will pass the
-// hart ID and device tree pointer as arguments to the kernel.
-//
-// In the future we may want to pass additional arguments like command line arguments or other
-// configuration data.
-pub fn execute_kernel(uart: &Uart,
-                      load_address: *const u8,
-                      hart_id: usize,
-                      device_tree_ptr: *const u8,
-                      file_stream: &mut FileStream) -> Result<(), &'static str>
+/// Load the kernel from the file stream.
+pub fn load_kernel(uart: &Uart,
+                   load_address: *const u8,
+                   file_stream: &mut FileStream) -> Result<(), &'static str>
 {
     // Read and validate the ELF header from the file stream.
     let elf_header = Elf64Header::new(file_stream)?;
@@ -403,9 +420,26 @@ pub fn execute_kernel(uart: &Uart,
     unsafe
     {
         let kernel_entry: KernelEntryPoint = transmute(entry_point);
-
-        kernel_entry(hart_id, device_tree_ptr);
+        KERNEL_ENTRY_POINT = Some(kernel_entry);
     }
 
     Ok(())
+}
+
+
+
+/// Actually execute the kernel's startup code by jumping to the kernel entry point.
+///
+/// TODO: In the future we may want to add some additional kernel parameters here to configure the
+///       kernel startup behavior.
+pub fn execute_kernel(hart_id: usize, device_tree_ptr: *const u8) -> !
+{
+    if let Some(kernel_entry) = unsafe { KERNEL_ENTRY_POINT }
+    {
+        kernel_entry(hart_id, device_tree_ptr);
+    }
+    else
+    {
+        panic!("Kernel entry point not set. Cannot execute kernel.");
+    }
 }

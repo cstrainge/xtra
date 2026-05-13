@@ -9,9 +9,11 @@ fn main()
 
     // Copy linker script to output directory
     fs::copy("link.ld", out_dir.join("link.ld")).unwrap();
+    fs::copy("../xtra-kernel/shared_locations.ld", out_dir.join("shared_locations.ld")).unwrap();
 
     // Tell cargo to re-run this build script if link.ld changes
     println!("cargo:rerun-if-changed=link.ld");
+    println!("cargo:rerun-if-changed=../xtra-kernel/shared_locations.ld");
 
     // Tell rustc to link with our script
     println!("cargo:rustc-link-search={}", out_dir.display());

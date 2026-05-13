@@ -1,4 +1,7 @@
 
+INCLUDE "shared_locations.ld"
+
+
 ENTRY(_start)
 
 
@@ -20,6 +23,7 @@ SECTIONS
         *(.text*)
 
         _text_end = .;
+
     }
 
     . = ALIGN(0x1000);
@@ -68,11 +72,11 @@ SECTIONS
 
     _kernel_end = .;
 
-    _heap_start = .;
+    _heap_start = KERNEL_HEAP_BASE;
 
-    . += 0x500000;
+    . += KERNEL_HEAP_SIZE;
 
-    _heap_end = .;
+    _heap_end = KERNEL_HEAP_END;
 
 
     /DISCARD/ :

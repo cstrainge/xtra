@@ -62,12 +62,15 @@ mod elf;
 
 // We import from the core library instead of the standard library, because we are running in a bare
 // metal environment without a heap or standard library support.
-use core::{ arch::naked_asm, panic::PanicInfo };
+use core::{ arch::naked_asm,
+            hint::spin_loop,
+            panic::PanicInfo,
+            sync::atomic::{ AtomicBool, Ordering } };
 
 // Import the important symbols from our sub-modules.
 use crate::{ block_device::BlockDevice,
              device_tree::{ DeviceTree, validate_dtb },
-             elf::execute_kernel,
+             elf::{ execute_kernel, load_kernel },
              fat32::{ DirectoryEntry, DirectoryIterator, Fat32Volume, FileStream },
              power::{ power_off, wait_for_interrupt },
              uart::{ Uart, UART_0_BASE },
@@ -81,8 +84,33 @@ const KERNEL_FILE_NAME: &[u8; 11] = b"KERNEL  ELF"; // The name of the kernel fi
 
 // Hardcode the address we will load the kernel image to in memory. In the future we may want to
 // make this dynamic.
-const KERNEL_LOAD_ADDRESS: usize = 0x8050_0000;   // We are using 5MB after the position where the
+const KERNEL_LOAD_ADDRESS: usize = 0x8000_0000;   // We are using 5MB after the position where the
                                                   // bootloader was loaded.
+
+
+// The maximum number of harts (hardware threads) that we will support in the bootloader. This is
+// because we need to allocate the stack for each hart supported by the bootloader.
+const MAX_SUPPORTED_HARTS: usize = 4;
+
+
+/// Keep track of whether the kernel has been loaded or not. This is used to prevent multiple harts
+/// from jumping into the non-existent kernel.
+static KERNEL_LOADED: AtomicBool = AtomicBool::new(false);
+
+
+
+/// Has the kernel been loaded yet?
+fn is_kernel_loaded() -> bool
+{
+    KERNEL_LOADED.load(Ordering::Acquire)
+}
+
+
+/// The kernel has been loaded, let the other hearts know.
+fn set_kernel_loaded()
+{
+    KERNEL_LOADED.store(true, Ordering::Release);
+}
 
 
 
@@ -103,8 +131,43 @@ pub unsafe extern "C" fn _start()
     // proper main function.
     naked_asm!
     (
-        "la sp, _stack_start", // Load the stack pointer from the linker script.
-        "j main"               // hart_id and dtb are already in a0 and a1, so just call main.
+        // Check the given hart ID and if it's greater than the maximum supported harts, we will
+        // park it.
+        "li t0, {max_supported_harts}",
+        "bgeu a0, t0, 1f",
+
+        // Otherwise we'll proceed to start up this hart and compute it's stack area.
+        "la t0, _stack_bottom", // Load the stack bottom as well. Thus giving us the full stack
+                                //  size.
+        "la t1, _stack_top",    // Load the stack top from the linker script.
+        "sub t1, t1, t0",       // Compute the actual size.
+
+        // Figure out how much stack space we have and then divide it up by the number of supported
+        // harts.
+        "li t2, {max_supported_harts}",
+        "divu t1, t1, t2",
+        "addi t2, a0, 1",
+        "mul t1, t1, t2",
+        "add sp, t0, t1",       // Set the proper stack pointer for this hart based on the hart ID
+                                // and the stack size.
+
+        // The stack has been setup so we can safely jump to the real main function now.
+        ".option push",
+        ".option norelax",      // Prevent linker relaxation for the address load.
+        "la t0, main",          // Because main is a far address we need to load it into a register
+                                //  first.
+        "jr t0",                // Also, hart_id and dtb are already in a0 and a1, so just call
+                                //  main.
+        ".option pop",
+
+        // Ok, if the hart ID is greater than the maximum supported harts, we will just wait for an
+        // interrupt forever. We know the wait will be forever because we disable interrupts first.
+        "1:",
+        "csrci mstatus, 0x8",
+        "wfi",
+        "j 1b",
+
+        max_supported_harts = const MAX_SUPPORTED_HARTS
     );
 }
 
@@ -202,10 +265,21 @@ pub extern "C" fn main(hart_id: usize, device_tree_ptr: *const u8) -> !
     // Check to make sure that we are running on the boot hart (hart_id 0).
     if hart_id != 0
     {
-        // We're not, so we will wait in an idle state.
-        unsafe
+        // Wait for the boot hart to load the kernel before we attempt to jump into it.
+        while !is_kernel_loaded()
         {
-            wait_for_interrupt();
+            unsafe
+            {
+                core::arch::asm!("nop", options(nomem, nostack, preserves_flags));
+            }
+        }
+
+        // The kernel has been loaded so jump to it. This function will never return.
+        execute_kernel(hart_id, device_tree_ptr);
+
+        loop
+        {
+            unsafe { wait_for_interrupt(); }
         }
     }
 
@@ -268,14 +342,14 @@ pub extern "C" fn main(hart_id: usize, device_tree_ptr: *const u8) -> !
     uart.put_int(partition.size_in_sectors as usize * SECTOR_SIZE);
     uart.put_str(" bytes.\n");
     uart.put_str("\n");
-    uart.put_str("Reading FAT32 partition...\n");
+    uart.put_str("Reading FAT-32 partition...\n");
 
-    // Initialize the fat32 volume for reading.
+    // Initialize the FAT-32 volume for reading.
     let fat32_volume = Fat32Volume::new(&block_device, &partition);
 
     if let Err(e) = fat32_volume
     {
-        uart.put_str("Failed to initialize FAT32 volume.\n");
+        uart.put_str("Failed to initialize FAT-32 volume.\n");
         uart.put_str("Error: ");
         uart.put_str(e);
         uart.put_str("\n");
@@ -283,7 +357,9 @@ pub extern "C" fn main(hart_id: usize, device_tree_ptr: *const u8) -> !
         power_off();
     }
 
-    // Now that we have a valid FAT32 volume, we can create a directory iterator for the root
+    uart.put_str("FAT-32 volume info read successfully!\n");
+
+    // Now that we have a valid FAT-32 volume, we can create a directory iterator for the root
     // directory of the volume.
     let fat32_volume = fat32_volume.unwrap();
     let directory_iterator = DirectoryIterator::new(&fat32_volume, fat32_volume.root_cluster);
@@ -357,11 +433,13 @@ pub extern "C" fn main(hart_id: usize, device_tree_ptr: *const u8) -> !
     // and application memory pages.
     uart.put_str("Executing kernel image...\n");
 
-    let result = execute_kernel(&uart,
-                                KERNEL_LOAD_ADDRESS as *const u8,
-                                hart_id,
-                                device_tree_ptr,
-                                &mut kernel_stream);
+    let result = load_kernel(&uart,
+                             KERNEL_LOAD_ADDRESS as *const u8,
+                             &mut kernel_stream);
+
+    set_kernel_loaded();
+
+    execute_kernel(hart_id, device_tree_ptr);
 
     // Ok, if we got here, something went wrong in trying to execute the kernel.
     match result

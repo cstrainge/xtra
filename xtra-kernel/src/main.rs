@@ -113,26 +113,27 @@ static mut STACKS: [u8; STACK_SIZE * MAX_CORES] = [0; STACK_SIZE * MAX_CORES];
 
 
 
-/// Keep track of whether the system has booted or not. This is used to ensure that only the first
-/// hart runs the boot process and the others wait for it to complete.
-static SYSTEM_BOOTED: AtomicBool = AtomicBool::new(false);
+/// Keep track of whether the system has the global initialization has completed or not. This is used
+/// to ensure that only the first hart runs the core boot process and the others wait for it to
+/// complete.
+static GLOBAL_INIT_COMPLETE: AtomicBool = AtomicBool::new(false);
 
 
 
 /// Check if the system has booted yet. This is used to ensure that only the first hart runs the
 /// boot process and the others wait for it to complete.
-fn system_booted() -> bool
+fn is_global_init_completed() -> bool
 {
-    SYSTEM_BOOTED.load(Ordering::Acquire)
+    GLOBAL_INIT_COMPLETE.load(Ordering::Acquire)
 }
 
 
 
 /// Signal to the secondary harts that the system is ready for them to start running their scheduler.
 /// This is called by the first hart after it has completed the boot process.
-fn set_system_booted()
+fn set_global_init_completed()
 {
-    SYSTEM_BOOTED.store(true, Ordering::Release);
+    GLOBAL_INIT_COMPLETE.store(true, Ordering::Release);
 }
 
 
@@ -171,7 +172,7 @@ pub unsafe extern "C" fn _start() -> !
                                        // (the top), so pushes/allocas move toward lower addresses
                                        // within the allocated slice.
 
-        "add t0, t0, t1",              // t0 = &STACKS[(hart_id+1)*STACK_SIZE] + STACK_SIZE.
+        "add t0, t0, t1",              // t0 = &STACKS[hart_id * STACK_SIZE + STACK_SIZE]
 
         "mv sp, t0",                   // set sp to top of stack for this hart.
 
@@ -229,7 +230,7 @@ pub extern "C" fn main(core_index: usize, device_tree_ptr: *const u8) -> !
     if core_index != 0
     {
         // Wait for the boot process to complete.
-        while !system_booted()
+        while !is_global_init_completed()
         {
             // Let the compiler know that this is a busy wait. This will allow it to emit hints to
             // the CPU to optimize this loop and minimize it's power usage.
@@ -313,7 +314,7 @@ pub extern "C" fn main(core_index: usize, device_tree_ptr: *const u8) -> !
         // program and prepare it for execution.
 
         // Let other harts know that the boot process is complete.
-        set_system_booted();
+        set_global_init_completed();
     }
 
     // Finally initialize the scheduler for this CPU core and start it running. The scheduler's run

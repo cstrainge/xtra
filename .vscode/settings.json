@@ -1,6 +1,6 @@
 
 {
-    "window.border": "#22D3EE",
+    "window.border": "#FF6B6B",
 
     "rust-analyzer.cargo.features": [ "rv64s" ],
     //"rust-analyzer.check.targets": "release",
@@ -18,14 +18,18 @@
     "rust-analyzer.completion.autoimport.enable": false,
 
     "cSpell.words": [
+        "addi",
         "ASID",
         "auipc",
+        "bgeu",
         "bootable",
         "Boxable",
         "chrono",
+        "csrci",
         "csrr",
         "csrw",
         "devirtualize",
+        "divu",
         "ehsize",
         "filesz",
         "genext",
@@ -44,6 +48,7 @@
         "mkpart",
         "MMIO",
         "msdos",
+        "mstatus",
         "mvendorid",
         "NAPOT",
         "nographic",

@@ -70,8 +70,7 @@ dd if=build/disk0-part1.img of=build/disk0.img bs=1M seek=33 conv=notrunc
 
 # ---- Run the OS in QEMU. -------------------------------------------------------------------------
 
-# START_BIN="build/xtra-bootloader"
-START_BIN="target/riscv64imac-unknown-none-elf/$BUILD_MODE/xtra-kernel"
+START_BIN="build/xtra-bootloader"
 
 qemu-system-riscv64 \
     -machine virt \
