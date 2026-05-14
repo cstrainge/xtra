@@ -3,6 +3,10 @@
 name = "xtra-bootloader"
 version = "0.0.0"
 edition = "2024"
-authors = ["Chloë Strainge <nullptr.0@gmail.com>"]
+authors = [ "Chloë Strainge <nullptr.0@gmail.com>" ]
 description = "The initial bootloader crate for xtra-os."
 license = "MIT"
+
+
+[dependencies]
+xtra-shared = { path = "../xtra-shared" }

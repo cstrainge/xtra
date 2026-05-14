@@ -16,6 +16,8 @@ echo "Building the OS in $BUILD_MODE mode..."
 
 # ---- Build the bootloader and the Kernel. --------------------------------------------------------
 
+# Compile the bootloader and the Kernel fo the RISC-V 64-bit architecture. Right now the code
+# supports QEMU devices drivers. The bootloader in particular is built with QEMU in mind.
 if [ "$BUILD_MODE" == "debug" ]
 then
     cargo build --target riscv64imac-unknown-none-elf --workspace --features nightly
@@ -23,11 +25,23 @@ else
     cargo build --target riscv64imac-unknown-none-elf --workspace --features nightly --release
 fi
 
+# Copy the bootloader into place for QEMU to load.
 mkdir -p build
 cp target/riscv64imac-unknown-none-elf/$BUILD_MODE/xtra-bootloader build/xtra-bootloader
 
+# Copy the Kernel into place for the bootloader to load from the disk image.
 mkdir -p build/boot
 cp target/riscv64imac-unknown-none-elf/$BUILD_MODE/xtra-kernel build/boot/kernel.elf
+
+# Create the mount table for the Kernel to know how to mount the base disk partitions. The
+# bootloader will parse this file and pass the information to the Kernel so that it can mount the
+# required filesystems.
+#
+# Later if we add loadable device drivers the Kernel can search for them in the /boot/ directory.
+cat > build/boot/mount.tbl <<'EOF'
+mount /     disk:0 pt:1 type:ext2
+mount /boot disk:0 pt:0 type:fat32
+EOF
 
 
 
@@ -58,6 +72,7 @@ parted -s build/disk0.img set 1 boot on
 dd if=/dev/zero of=build/disk0-part0.img bs=1M count=32
 mkfs.fat -F 32 build/disk0-part0.img
 mcopy -i build/disk0-part0.img build/boot/kernel.elf ::kernel.elf
+mcopy -i build/disk0-part0.img build/boot/mount.tbl ::mount.tbl
 
 # Create the ext2 root filesystem image (~990MB)
 genext2fs -d build/sys-root -b 253952 build/disk0-part1.img
@@ -83,7 +98,3 @@ qemu-system-riscv64 \
     -display sdl \
     -smp 4 \
     -m 2048M
-
-
-#    -monitor tcp::4444,server
-#    -append "root=/dev/vda2 rw" \

@@ -5,7 +5,7 @@
 name = "xtra-kernel"
 version = "0.0.0"
 edition = "2024"
-authors = ["Chloë Strainge <nullptr.0@gmail.com>"]
+authors = [ "Chloë Strainge <nullptr.0@gmail.com>" ]
 description = "The main kernel crate for xtra-os."
 license = "MIT"
 
@@ -30,3 +30,7 @@ sv48 = []
 # Allow the kernel to be aggressively optimized for speed.
 [profile.release]
 lto = "fat"
+
+
+[dependencies]
+xtra-shared = { path = "../xtra-shared" }

@@ -1,0 +1,16 @@
+
+# Library of code shared between the Kernel and the Bootloader.
+
+[package]
+name = "xtra-shared"
+version = "0.0.0"
+edition = "2024"
+authors = [ "Chloë Strainge <nullptr.0@gmail.com>" ]
+description = "A library of code shared between the Kernel and the Bootloader."
+license = "MIT"
+
+
+[features]
+
+
+[dependencies]
