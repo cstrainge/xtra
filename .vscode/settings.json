@@ -2,7 +2,7 @@
 {
     "window.border": "#FF6B6B",
 
-    "rust-analyzer.cargo.features": [ "rv64s" ],
+    "rust-analyzer.cargo.features": [ "rv64s", "nightly" ],
     //"rust-analyzer.check.targets": "release",
     "rust-analyzer.cargo.target": "riscv64imac-unknown-none-elf",
     "rust-analyzer.cargo.buildScripts.enable": true,

@@ -13,6 +13,8 @@ license = "MIT"
 # These feature flags are used to tune the specific architecture of the system we are building for.
 # The features that are selected depend on the CPU being targeted by the build.
 [features]
+nightly = []
+
 # By default we are compiling for RISC-V 64-bit systems with the sv39 page table format.
 default = [ "rv64s" ]
 

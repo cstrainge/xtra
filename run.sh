@@ -18,9 +18,9 @@ echo "Building the OS in $BUILD_MODE mode..."
 
 if [ "$BUILD_MODE" == "debug" ]
 then
-    cargo build --target riscv64imac-unknown-none-elf --workspace
+    cargo build --target riscv64imac-unknown-none-elf --workspace --features nightly
 else
-    cargo build --target riscv64imac-unknown-none-elf --workspace --release
+    cargo build --target riscv64imac-unknown-none-elf --workspace --features nightly --release
 fi
 
 mkdir -p build

@@ -38,8 +38,8 @@ impl SectionLayout
 
 
 
-// The layout of the kernel in RAM, this includes the kernel range, text, rodata, data, and bss
-// sections.
+/// The layout of the kernel in RAM, this includes the kernel range, text, rodata, data, and bss
+/// sections.
 #[derive(Copy, Clone)]
 pub struct KernelMemoryLayout
 {
@@ -56,8 +56,8 @@ pub struct KernelMemoryLayout
 
 impl KernelMemoryLayout
 {
-    // Create a new instance of the kernel memory layout, this will read the kernel sections from
-    // the linker script and return a new `KernelMemoryLayout` instance.
+    /// Create a new instance of the kernel memory layout, this will read the kernel sections from
+    /// the linker script and return a new `KernelMemoryLayout` instance.
     pub fn new() -> Self
     {
         unsafe extern "C"
@@ -154,6 +154,7 @@ impl KernelMemoryLayout
             }
     }
 
+    /// Create a new zeroed kernel memory layout.
     pub const fn zeroed() -> Self
     {
         KernelMemoryLayout
@@ -171,7 +172,7 @@ impl KernelMemoryLayout
 
 
 
-// Print the kernel memory layout in a human-readable format for diagnostics purposes.
+/// Print the kernel memory layout in a human-readable format for diagnostics purposes.
 impl Display for KernelMemoryLayout
 {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result

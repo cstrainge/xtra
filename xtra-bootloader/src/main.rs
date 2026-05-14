@@ -62,7 +62,7 @@ mod elf;
 
 // We import from the core library instead of the standard library, because we are running in a bare
 // metal environment without a heap or standard library support.
-use core::{ arch::naked_asm,
+use core::{ arch::{ asm, naked_asm },
             hint::spin_loop,
             panic::PanicInfo,
             sync::atomic::{ AtomicBool, Ordering } };
@@ -270,7 +270,7 @@ pub extern "C" fn main(hart_id: usize, device_tree_ptr: *const u8) -> !
         {
             unsafe
             {
-                core::arch::asm!("nop", options(nomem, nostack, preserves_flags));
+                asm!("nop", options(nomem, nostack, preserves_flags));
             }
         }
 

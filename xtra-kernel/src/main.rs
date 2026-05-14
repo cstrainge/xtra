@@ -5,16 +5,29 @@
 #![no_std]
 #![no_main]
 #![allow(unused)]
-#![feature(ptr_metadata)]
-#![feature(naked_functions_target_feature)]
+#![cfg_attr(feature = "nightly", feature(ptr_metadata))]
+#![cfg_attr(feature = "nightly", feature(naked_functions_target_feature))]
+#![cfg_attr(feature = "nightly", feature(alloc_error_handler))]
 
 
 
-// extern crate alloc;
+// Bring in the alloc create for supporting heap allocation in the Kernel. This is required for the
+// any dynamic memory allocation in the kernel.
+extern crate alloc;
 
 
 
-// Bring in the kernel subsystems that implement the core functionality of the Xtra kernel.
+/// The prelude module for the kernel, this is where we re-export commonly used types and traits
+/// from the alloc crate so that they can be easily used throughout the kernel without having to
+/// import them directly.
+pub mod prelude
+{
+    pub use alloc::{ boxed::Box, string::String, vec::Vec };
+}
+
+
+
+// Bring in the subsystems that implement the core functionality of the Xtra kernel.
 
 
 
@@ -56,7 +69,8 @@ use core::{ arch::naked_asm,
 
 use crate::{ arch::{ device_tree::DeviceTree, get_core_index, print_cpu_info },
              printing::init_printing,
-             memory::{ kernel::KernelMemoryLayout,
+             memory::{ heap::initialize_heap,
+                       kernel::KernelMemoryLayout,
                        memory_device::SystemMemory,
                        mmu::{ convert_to_kernel_address_space, init_memory_manager } },
              scheduler::Scheduler };
@@ -287,11 +301,9 @@ pub extern "C" fn main(core_index: usize, device_tree_ptr: *const u8) -> !
 
         convert_to_kernel_address_space();
 
-        // Now make sure that MMIO pages are mapped correctly so that we can access the hardware
-        // devices. We also need to make sure those pages are marked as used in the memory manager.
-
-        // Now we can initialize our heap allocator so that it can manage our heap memory in our
-        // proper address space.
+        // Now we can initialize our heap so that we can dynamically allocate memory in the Kernel.
+        initialize_heap(&kernel_memory_layout)
+            .expect("Failed to initialize heap allocator");
 
         // Initialize the interrupt controller so that we can handle interrupts and exceptions in
         // the kernel.
