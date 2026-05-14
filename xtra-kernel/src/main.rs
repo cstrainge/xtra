@@ -17,16 +17,6 @@ extern crate alloc;
 
 
 
-/// The prelude module for the kernel, this is where we re-export commonly used types and traits
-/// from the alloc crate so that they can be easily used throughout the kernel without having to
-/// import them directly.
-pub mod prelude
-{
-    pub use alloc::{ boxed::Box, string::String, vec::Vec };
-}
-
-
-
 // Bring in the subsystems that implement the core functionality of the Xtra kernel.
 
 
@@ -51,6 +41,16 @@ mod locking;
 /// well as the heap allocator for the kernel built atop of the page allocator.
 mod memory;
 
+/// The device drivers subsystem for the Kernels. All of the device drivers supported by the Kernel
+/// live under this module.
+///
+/// TODO: Move the UART driver into this module as well.
+mod devices;
+
+/// The general interrupt subsystem for the Kernel. This will be the interface to the CPU's
+/// interrupt controller.
+mod interrupts;
+
 /// The file system support for the kernel. Including our implementation of FAT-32 and Ext2 file
 /// systems.
 mod filesystems;
@@ -61,6 +61,18 @@ mod scheduler;
 
 
 
+/// The prelude module for the kernel, this is where we re-export commonly used types and traits
+/// from the alloc crate so that they can be easily used throughout the kernel without having to
+/// import them directly.
+pub mod prelude
+{
+    pub use alloc::{ boxed::Box, collections::BTreeMap, rc::Rc, string::String, vec::Vec };
+
+    pub use crate::printing::BufferWriter;
+}
+
+
+
 use core::{ arch::naked_asm,
             hint::spin_loop,
             panic::PanicInfo,
@@ -68,6 +80,9 @@ use core::{ arch::naked_asm,
             sync::atomic::{ AtomicBool, Ordering } };
 
 use crate::{ arch::{ device_tree::DeviceTree, get_core_index, print_cpu_info },
+             devices::{ activate_devices, walk_device_tree },
+             filesystems::initialize_filesystems,
+             interrupts::initialize_interrupts,
              printing::init_printing,
              memory::{ heap::initialize_heap,
                        kernel::KernelMemoryLayout,
@@ -302,19 +317,42 @@ pub extern "C" fn main(core_index: usize, device_tree_ptr: *const u8) -> !
         convert_to_kernel_address_space();
 
         // Now we can initialize our heap so that we can dynamically allocate memory in the Kernel.
+        println!("Initializing heap allocator...");
+
         initialize_heap(&kernel_memory_layout)
             .expect("Failed to initialize heap allocator");
-
-        // Initialize the interrupt controller so that we can handle interrupts and exceptions in
-        // the kernel.
 
         // Walk the device tree and find and initialize our supported devices. Once this is done we
         // can free the device tree pages. Any information needed from the device tree should be
         // copied by the respective device drivers.
+        println!("Discovering attached devices...");
+
+        walk_device_tree(&device_tree)
+            .expect("Failed to walk device tree and initialize devices");
+
+        // Initialize the interrupt controller so that we can handle interrupts and exceptions in
+        // the kernel.
+        println!("Initializing interrupt controller...");
+
+        initialize_interrupts()
+            .expect("Failed to initialize system interrupt subsystem");
+
+        // Now that the drivers are allocated and the interrupt controller is initialized, we can
+        // allow the device drivers to start talking to and initializing their devices.
+        // TODO: It's at this point we can switch the UART driver from polled mode to interrupt mode
+        //       and start accepting input from the UART console.
+        println!("Initializing attached devices...");
+
+        activate_devices()
+            .expect("Failed to connect devices to their drivers");
 
         // Now that we have all the devices initialized, we can initialize the file systems and
         // mount the root file system. We will need to find the boot volume and find the partition
         // mapping so that we can map all partitions to where they need to go.
+        println!("Initializing and mounting file systems...");
+
+        initialize_filesystems()
+            .expect("Failed to initialize file systems and mount root file system");
 
         // At this point we can start process 0, the idle process. If there is no other process that
         // can be run at any given time, the idle process will run. This is a simple process

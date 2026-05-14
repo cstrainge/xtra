@@ -15,10 +15,11 @@
 
 use core::{ arch::asm, fmt::Write, mem::size_of };
 
+use crate::prelude::*;
+
 use crate::{ arch::mmu::{ PAGE_SIZE,
                           sv39::{ page_table_entry::PageTableEntry,
                                   virtual_address::VirtualAddress } },
-             printing::BufferWriter,
              memory::{ mmu::{ page_box::PageBoxable,
                               permissions::Permissions,
                               virtual_page_ptr::VirtualPagePtr } } };

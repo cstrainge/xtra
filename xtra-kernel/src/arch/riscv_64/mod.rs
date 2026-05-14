@@ -12,6 +12,9 @@ pub mod csr;
 /// The hardware level MMU support for RISC-V 64-bit.
 pub mod mmu;
 
+/// The hardware level interrupt support for RISC-V 64-bit.
+pub mod interrupts;
+
 
 
 use crate::{ arch::csr::{ read_marchid, read_mhartid, read_mimpid, read_mvendorid },
