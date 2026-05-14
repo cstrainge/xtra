@@ -92,7 +92,7 @@ static mut SYSTEM_MEMORY: Option<SystemMemory> = None;
 
 
 
-/// Initialize the system's memory management unit, (MMU,) and the higher level data strictures
+/// Initialize the system's memory management unit, (MMU,) and the higher level data structures
 /// around it.
 ///
 /// The page tables for the kernel itself will be initialized and the free page list allocated and
@@ -170,7 +170,7 @@ pub fn get_system_memory_layout() -> SystemMemory
 /// This will also adjust the kernel's stack pointer and reset the PC to the new virtual address
 /// space of the kernel.
 ///
-/// THis function will panic on failure.
+/// This function will panic on failure.
 pub fn convert_to_kernel_address_space()
 {
     let _guard = LockGuard::new(&FREE_PAGE_LOCK);
