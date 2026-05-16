@@ -3,9 +3,9 @@
 resolver = "2"
 
 members = [
-    "xtra-kernel",
+    "xtra-kernel-shared",
     "xtra-bootloader",
-    "xtra-shared"
+    "xtra-kernel"
 ]
 
 

@@ -68,7 +68,7 @@ use core::{ arch::{ asm, naked_asm },
             panic::PanicInfo,
             sync::atomic::{ AtomicBool, Ordering } };
 
-use xtra_shared::mount_table::XtraMountTable;
+use xtra_kernel_shared::mount_table::XtraMountTable;
 
 // Import the important symbols from our sub-modules.
 use crate::{ block_device::BlockDevice,

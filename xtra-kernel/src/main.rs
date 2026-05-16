@@ -79,7 +79,7 @@ use core::{ arch::naked_asm,
             ptr::addr_of_mut,
             sync::atomic::{ AtomicBool, Ordering } };
 
-use xtra_shared::mount_table::XtraMountTable;
+use xtra_kernel_shared::mount_table::XtraMountTable;
 
 use crate::{ arch::{ device_tree::DeviceTree, get_core_index, print_cpu_info },
              devices::{ activate_devices, walk_device_tree },

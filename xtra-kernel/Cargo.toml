@@ -27,10 +27,5 @@ sv39 = []
 sv48 = []
 
 
-# Allow the kernel to be aggressively optimized for speed.
-[profile.release]
-lto = "fat"
-
-
 [dependencies]
-xtra-shared = { path = "../xtra-shared" }
+xtra-kernel-shared = { path = "../xtra-kernel-shared" }

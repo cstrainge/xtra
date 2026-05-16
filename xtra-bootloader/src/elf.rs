@@ -4,7 +4,7 @@
 
 use core::{ mem::transmute, slice::from_raw_parts_mut };
 
-use xtra_shared::mount_table::XtraMountTable;
+use xtra_kernel_shared::mount_table::XtraMountTable;
 
 use crate::{ fat32::FileStream, uart::Uart };
 

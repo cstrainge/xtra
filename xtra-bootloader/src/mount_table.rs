@@ -1,10 +1,10 @@
 
 // Module to parse the mount table from the boot drive for passing to the Kernel.
 
-use xtra_shared::mount_table::{ XtraFilesystemType,
-                                XtraMountTable,
-                                XTRA_MAX_MOUNT_TABLE_ENTRIES,
-                                XTRA_MAX_MOUNT_POINT_STRING_LENGTH };
+use xtra_kernel_shared::mount_table::{ XtraFilesystemType,
+                                       XtraMountTable,
+                                       XTRA_MAX_MOUNT_TABLE_ENTRIES,
+                                       XTRA_MAX_MOUNT_POINT_STRING_LENGTH };
 
 use crate::fat32::{ DirectoryEntry, DirectoryIterator, Fat32Volume, FileStream };
 

@@ -9,4 +9,4 @@ license = "MIT"
 
 
 [dependencies]
-xtra-shared = { path = "../xtra-shared" }
+xtra-kernel-shared = { path = "../xtra-kernel-shared" }
