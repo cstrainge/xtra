@@ -6,8 +6,10 @@
 use core::{ clone::Clone,
             cmp::{ Eq, PartialEq },
             default::Default,
+            fmt::{ Display, Formatter, self },
             marker::Copy,
-            prelude::rust_2024::derive };
+            prelude::rust_2024::derive,
+            str::from_utf8 };
 
 
 
@@ -36,7 +38,28 @@ pub enum XtraFilesystemType
 
     /// The Ext2 filesystem, this is a more complex filesystem that is used for larger storage
     /// devices and is the base for important filesystem features like permission support.
-    Ext2
+    Ext2,
+
+    /// The mount table specified a filesystem type that the kernel does not recognize.
+    Unknown
+}
+
+
+
+impl Display for XtraFilesystemType
+{
+    fn fmt(&self, formatter: &mut Formatter) -> Result<(), fmt::Error>
+    {
+        match self
+        {
+            XtraFilesystemType::None    => write!(formatter, "None")?,
+            XtraFilesystemType::Fat32   => write!(formatter, "FAT-32")?,
+            XtraFilesystemType::Ext2    => write!(formatter, "Ext2")?,
+            XtraFilesystemType::Unknown => write!(formatter, "Unknown")?
+        }
+
+        Ok(())
+    }
 }
 
 
@@ -89,6 +112,23 @@ impl Default for XtraMountTableEntry
 
 
 
+impl Display for XtraMountTableEntry
+{
+    fn fmt(&self, formatter: &mut Formatter) -> Result<(), fmt::Error>
+    {
+        write!(formatter,
+               "[ {}, Device: {}, Partition: {}, Filesystem Type: {} ]",
+               from_utf8(&self.mount_point).unwrap_or("<invalid utf-8>"),
+               self.device,
+               self.partition,
+               self.filesystem_type)?;
+
+        Ok(())
+    }
+}
+
+
+
 /// The representation of the mount table.
 #[repr(C)]
 #[derive(Clone, Copy)]
@@ -124,5 +164,22 @@ impl Default for XtraMountTable
     fn default() -> XtraMountTable
     {
         XtraMountTable::new()
+    }
+}
+
+
+
+impl Display for XtraMountTable
+{
+    fn fmt(&self, formatter: &mut Formatter) -> Result<(), fmt::Error>
+    {
+        for i in 0..self.num_entries
+        {
+            let entry = &self.entries[i];
+
+            write!(formatter, "Mount: {}\n", entry)?;
+        }
+
+        Ok(())
     }
 }

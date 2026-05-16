@@ -79,6 +79,8 @@ use core::{ arch::naked_asm,
             ptr::addr_of_mut,
             sync::atomic::{ AtomicBool, Ordering } };
 
+use xtra_shared::mount_table::XtraMountTable;
+
 use crate::{ arch::{ device_tree::DeviceTree, get_core_index, print_cpu_info },
              devices::{ activate_devices, walk_device_tree },
              filesystems::initialize_filesystems,
@@ -240,8 +242,13 @@ fn kernel_panic_handler(info: &PanicInfo) -> !
 /// The main entry point for the kernel, this function will never return.  Either it runs forever or
 /// a shutdown is initiated.
 #[unsafe(no_mangle)]
-pub extern "C" fn main(core_index: usize, device_tree_ptr: *const u8) -> !
+pub extern "C" fn main(core_index: usize,
+                       device_tree_ptr: *const u8,
+                       mount_table_ptr: *const XtraMountTable) -> !
 {
+    // Storage space for the system mount table.
+    let mut mount_table: XtraMountTable = XtraMountTable::default();
+
     // Make sure that we can support the number of cores we have in the system.
     assert!(core_index < MAX_CORES,
             "Unsupported CPU hart ID: {:02}, max supported cores: {:02}.",
@@ -294,6 +301,10 @@ pub extern "C" fn main(core_index: usize, device_tree_ptr: *const u8) -> !
 
         // Print out the CPU information for the current core.
         print_cpu_info();
+
+        // Copy the mount table from the bootloader right away so that we don't damage it when we
+        // overwrite the bootloader's memory with our own usage.
+        mount_table = unsafe { (*mount_table_ptr).clone() };
 
         // Determine where in RAM the kernel is loaded. We need to keep track of this so that we can
         // mark these pages as used in the memory manager.
@@ -359,6 +370,9 @@ pub extern "C" fn main(core_index: usize, device_tree_ptr: *const u8) -> !
         // that just spins and does nothing. It is used to keep the CPU busy when there are no
         // other processes to run. This is useful for power management. The CPU can safely run at a
         // lower frequency and power state when it is running the idle process.
+        println!("Mounting filesystems...");
+
+        println!("Mount Table\n{}", mount_table);
 
         // We have a root file system at this point, we can now look under /bin and find the init
         // program and prepare it for execution.

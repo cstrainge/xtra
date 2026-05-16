@@ -579,9 +579,7 @@ impl<'a> FileStream<'a>
                 from_raw_parts_mut(ptr as *mut u8, size_of::<T>())
             };
 
-        self.read_bytes(raw_bytes);
-
-        Ok(())
+        self.read_bytes(raw_bytes)
     }
 
     // Read an untyped collection of bytes from the file stream, advancing the cursor the number of
@@ -636,7 +634,7 @@ impl<'a> FileStream<'a>
         // actually reading the file byte by byte.
 
         // Check if the offset is within the bounds of the file.
-        if offset >= self.size
+        if offset > self.size
         {
             return Err("Seek offset is out of bounds.");
         }

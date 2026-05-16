@@ -4,6 +4,8 @@
 
 use core::{ mem::transmute, slice::from_raw_parts_mut };
 
+use xtra_shared::mount_table::XtraMountTable;
+
 use crate::{ fat32::FileStream, uart::Uart };
 
 
@@ -217,7 +219,9 @@ impl Elf64ProgramHeader
 
 /// Define the function to execute the kernel. It's expected to take the hart ID and device tree
 /// pointer as arguments and never return.
-type KernelEntryPoint = extern "C" fn(hart_id: usize, device_tree_ptr: *const u8) -> !;
+type KernelEntryPoint = extern "C" fn(hart_id: usize,
+                                      device_tree_ptr: *const u8,
+                                      mount_table_ptr: *const XtraMountTable) -> !;
 
 
 
@@ -432,11 +436,11 @@ pub fn load_kernel(uart: &Uart,
 ///
 /// TODO: In the future we may want to add some additional kernel parameters here to configure the
 ///       kernel startup behavior.
-pub fn execute_kernel(hart_id: usize, device_tree_ptr: *const u8) -> !
+pub fn execute_kernel(hart_id: usize, device_tree_ptr: *const u8, mount_table: &XtraMountTable) -> !
 {
     if let Some(kernel_entry) = unsafe { KERNEL_ENTRY_POINT }
     {
-        kernel_entry(hart_id, device_tree_ptr);
+        kernel_entry(hart_id, device_tree_ptr, mount_table);
     }
     else
     {

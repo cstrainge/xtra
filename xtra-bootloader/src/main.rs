@@ -56,6 +56,7 @@ mod block_device;
 mod partition_table;
 mod fat32;
 mod ram;
+mod mount_table;
 mod elf;
 
 
@@ -67,11 +68,14 @@ use core::{ arch::{ asm, naked_asm },
             panic::PanicInfo,
             sync::atomic::{ AtomicBool, Ordering } };
 
+use xtra_shared::mount_table::XtraMountTable;
+
 // Import the important symbols from our sub-modules.
 use crate::{ block_device::BlockDevice,
              device_tree::{ DeviceTree, validate_dtb },
              elf::{ execute_kernel, load_kernel },
              fat32::{ DirectoryEntry, DirectoryIterator, Fat32Volume, FileStream },
+             mount_table::load_mount_table,
              power::{ power_off, wait_for_interrupt },
              uart::{ Uart, UART_0_BASE },
              virtio::SECTOR_SIZE};
@@ -104,6 +108,7 @@ fn is_kernel_loaded() -> bool
 {
     KERNEL_LOADED.load(Ordering::Acquire)
 }
+
 
 
 /// The kernel has been loaded, let the other hearts know.
@@ -262,6 +267,11 @@ fn validate_device_tree(uart: &uart::Uart, device_tree_ptr: *const u8)
 #[unsafe(no_mangle)]
 pub extern "C" fn main(hart_id: usize, device_tree_ptr: *const u8) -> !
 {
+    // The mount table that we will pass to the Kernel so that it knows what devices/partitions to
+    // mount and where to mount them in the filesystem tree. It will be loaded from the same
+    // directory as the Kernel image itself.
+    let mut mount_table = XtraMountTable::default();
+
     // Check to make sure that we are running on the boot hart (hart_id 0).
     if hart_id != 0
     {
@@ -275,7 +285,7 @@ pub extern "C" fn main(hart_id: usize, device_tree_ptr: *const u8) -> !
         }
 
         // The kernel has been loaded so jump to it. This function will never return.
-        execute_kernel(hart_id, device_tree_ptr);
+        execute_kernel(hart_id, device_tree_ptr, &mount_table);
 
         loop
         {
@@ -412,6 +422,23 @@ pub extern "C" fn main(hart_id: usize, device_tree_ptr: *const u8) -> !
         power_off();
     }
 
+    // Attempt to load the mount table from the root directory of the FAT-32 volume.
+    uart.put_str("Attempting to load mount table from root directory...\n");
+
+    let load_result = load_mount_table(&fat32_volume, &mut directory_iterator);
+
+    if let Err(error) = load_result
+    {
+        uart.put_str("Failed to load mount table from root directory.\n");
+        uart.put_str("Error: ");
+        uart.put_str(error);
+        uart.put_str("\n");
+
+        power_off();
+    }
+
+    mount_table = load_result.unwrap();
+
     // We have a kernel! So attempt to create a file stream for loading the kernel image.
     let kernel_stream = FileStream::new_from_directory_entry(&fat32_volume, &kernel_entry);
 
@@ -439,7 +466,7 @@ pub extern "C" fn main(hart_id: usize, device_tree_ptr: *const u8) -> !
 
     set_kernel_loaded();
 
-    execute_kernel(hart_id, device_tree_ptr);
+    execute_kernel(hart_id, device_tree_ptr, &mount_table);
 
     // Ok, if we got here, something went wrong in trying to execute the kernel.
     match result
