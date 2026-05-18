@@ -4,7 +4,7 @@
 
 use core::{ alloc::{ GlobalAlloc, Layout },
             arch::asm,
-            ptr::null_mut,
+            ptr::{ null_mut, write_volatile },
             sync::atomic::{ AtomicBool, AtomicUsize, Ordering } };
 
 use crate::memory::kernel::{ KernelMemoryLayout, SectionLayout };
@@ -211,9 +211,16 @@ unsafe impl GlobalAlloc for HeapAllocator
     /// the free pool.
     unsafe fn dealloc(&self, ptr: *mut u8, layout: Layout)
     {
-        unsafe
+        let mut ptr = ptr;
+
+        for _ in 0..layout.size()
         {
-            asm!("nop", options(nomem, nostack, preserves_flags));
+            // Just write some garbage to the memory to make sure that we don't accidentally reuse
+            // it without properly initializing it first. This is a temporary measure until we have
+            // a real allocator that can actually reuse memory.
+            unsafe { write_volatile(ptr, 0xCD) };
+
+            ptr = unsafe { ptr.add(1) };
         }
     }
 }
