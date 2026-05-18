@@ -19,6 +19,7 @@
 
     "cSpell.words": [
         "addi",
+        "APIC",
         "ASID",
         "auipc",
         "bgeu",
@@ -64,6 +65,7 @@
         "phentsize",
         "phnum",
         "phoff",
+        "plic",
         "PMPADDR",
         "PMPCFG",
         "rodata",

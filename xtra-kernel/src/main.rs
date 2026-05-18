@@ -8,6 +8,7 @@
 #![cfg_attr(feature = "nightly", feature(ptr_metadata))]
 #![cfg_attr(feature = "nightly", feature(naked_functions_target_feature))]
 #![cfg_attr(feature = "nightly", feature(alloc_error_handler))]
+#![cfg_attr(feature = "nightly", feature(never_type))]
 
 
 
@@ -82,7 +83,7 @@ use core::{ arch::naked_asm,
 use xtra_kernel_shared::{ device_tree::DeviceTree, mount_table::XtraMountTable };
 
 use crate::{ arch::{ get_core_index, print_cpu_info },
-             devices::{ activate_devices, walk_device_tree },
+             devices::{ activate_devices, initialize_device_registry, walk_device_tree },
              filesystems::initialize_filesystems,
              interrupts::initialize_interrupts,
              printing::init_printing,
@@ -333,12 +334,20 @@ pub extern "C" fn main(core_index: usize,
         initialize_heap(&kernel_memory_layout)
             .expect("Failed to initialize heap allocator");
 
+
+        // Initialize the device registry with the device drivers that we have compiled into the
+        // kernel.
+        println!("Initializing device driver subsystem...");
+
+        let device_registry = initialize_device_registry()
+            .expect("Failed to initialize device driver registry");
+
         // Walk the device tree and find and initialize our supported devices. Once this is done we
         // can free the device tree pages. Any information needed from the device tree should be
         // copied by the respective device drivers.
-        println!("Discovering attached devices...");
+        println!("  Discovering attached devices...");
 
-        walk_device_tree(&device_tree)
+        walk_device_tree(&device_tree, device_registry)
             .expect("Failed to walk device tree and initialize devices");
 
         // Initialize the interrupt controller so that we can handle interrupts and exceptions in
@@ -356,6 +365,14 @@ pub extern "C" fn main(core_index: usize,
 
         activate_devices()
             .expect("Failed to connect devices to their drivers");
+
+        // At this point we can convert the printing subsystem to use the console device driver
+        // instead of talking directly to the UART. This enables us to support multiple console
+        // devices and have a more flexible logging system. For example it is at this point we can
+        // properly support dumping boot information to the systems attached display instead of
+        // just dumping to the serial port.
+
+        // TODO: Actually do this!
 
         // Now that we have all the devices initialized, we can initialize the file systems and
         // mount the root file system. We will need to find the boot volume and find the partition
