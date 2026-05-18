@@ -24,12 +24,12 @@ pub struct KeyModifiers
 
 
 /// Callback fired when an attached keyboard device detects a key press.
-pub type KeyboardPressedHandler = fn(keyboard_id: usize,
+pub type KeyboardPressedHandler = fn(keyboard: &dyn KeyboardDevice,
                                      scan_code: &[u8],
                                      modifiers: &KeyModifiers);
 
 /// Callback fired when an attached keyboard device detects a key release.
-pub type KeyboardReleasedHandler = fn(keyboard_id: usize,
+pub type KeyboardReleasedHandler = fn(keyboard: &dyn KeyboardDevice,
                                       scan_code: &[u8],
                                       modifiers: &KeyModifiers);
 
@@ -69,27 +69,27 @@ const MAX_MOUSE_BUTTONS: usize = 16;
 
 
 /// Callback fired when an attached mouse device detects movement.
-pub type MouseMovedHandler = fn(mouse_id: usize, delta_x: isize, delta_y: isize);
+pub type MouseMovedHandler = fn(mouse: &dyn MouseDevice, delta_x: isize, delta_y: isize);
 
 /// Callback fired when an attached mouse device detects a scroll wheel event.
-pub type MouseScrolledHandler = fn(mouse_id: usize, delta: isize);
+pub type MouseScrolledHandler = fn(mouse: &dyn MouseDevice, delta: isize);
 
 /// Callback fired when an attached mouse device detects a button press.
-pub type MouseButtonPressedHandler = fn(mouse_id: usize, button: &[usize]);
+pub type MouseButtonPressedHandler = fn(mouse: &dyn MouseDevice, button: usize);
 
 /// Callback fired when an attached mouse device detects a button release.
-pub type MouseButtonReleasedHandler = fn(mouse_id: usize, button: &[usize]);
+pub type MouseButtonReleasedHandler = fn(mouse: &dyn MouseDevice, button: usize);
 
 
 
 /// The state of a mouse device at a given point in time.
 pub struct MouseState
 {
-    /// The x position of the mouse since the last time it was read.
-    pub x: isize,
+    /// The x movement delta of the mouse since the last time it was read.
+    pub delta_x: isize,
 
-    /// The y position of the mouse since the last time it was read.
-    pub y: isize,
+    /// The y movement delta of the mouse since the last time it was read.
+    pub delta_y: isize,
 
     /// The scroll wheel position of the mouse, this can be positive or negative depending on the
     /// position of the wheel since the last time it was read.
@@ -145,34 +145,6 @@ pub fn register_driver_probes(registry: &mut DeviceDriverRegistry) -> Result<(),
 
 /// Activate and initialize the HID devices discovered in the device tree. If any.
 pub fn activate_devices() -> Result<(), &'static str>
-{
-    Ok(())
-}
-
-
-
-/// Callback function type for enumerating all of the attached keyboard devices on the system.
-pub type KeyboardEnumerator = fn(keyboard: &dyn KeyboardDevice);
-
-
-
-/// Enumerate all of the attached keyboard devices on the system and call the provided callback
-/// function for each one.
-pub fn enumerate_keyboards(enumerator: KeyboardEnumerator) -> Result<(), &'static str>
-{
-    Ok(())
-}
-
-
-
-/// Callback function type for enumerating all of the attached mouse devices on the system.
-pub type MouseEnumerator = fn(mouse: &dyn MouseDevice);
-
-
-
-/// Enumerate all of the attached mouse devices on the system and call the provided callback
-/// function for each one.
-pub fn enumerate_mice(enumerator: MouseEnumerator) -> Result<(), &'static str>
 {
     Ok(())
 }
