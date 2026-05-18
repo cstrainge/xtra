@@ -37,7 +37,7 @@ pub struct DeviceTree
     dtb_base: *const u8,
 
     /// Total size of DTB in bytes.
-    _total_size: u32,
+    dtb_total_size: u32,
 
     /// Offset to structure block.
     off_dt_struct: u32,
@@ -93,19 +93,29 @@ impl DeviceTree
 
         // Read the device tree header fields.
         DeviceTree
-        {
-            dtb_base: device_tree_ptr,
+            {
+                dtb_base: device_tree_ptr,
 
-            _total_size: DeviceTree::read_u32(&mut ptr),
-            off_dt_struct: DeviceTree::read_u32(&mut ptr),
-            off_dt_strings: DeviceTree::read_u32(&mut ptr),
-            _off_mem_res_map: DeviceTree::read_u32(&mut ptr),
-            _version: DeviceTree::read_u32(&mut ptr),
-            _last_comp_version: DeviceTree::read_u32(&mut ptr),
-            _boot_cpu_id_phys: DeviceTree::read_u32(&mut ptr),
-            _size_dt_strings: DeviceTree::read_u32(&mut ptr),
-            size_dt_struct: DeviceTree::read_u32(&mut ptr),
-        }
+                dtb_total_size: DeviceTree::read_u32(&mut ptr),
+                off_dt_struct: DeviceTree::read_u32(&mut ptr),
+                off_dt_strings: DeviceTree::read_u32(&mut ptr),
+                _off_mem_res_map: DeviceTree::read_u32(&mut ptr),
+                _version: DeviceTree::read_u32(&mut ptr),
+                _last_comp_version: DeviceTree::read_u32(&mut ptr),
+                _boot_cpu_id_phys: DeviceTree::read_u32(&mut ptr),
+                _size_dt_strings: DeviceTree::read_u32(&mut ptr),
+                size_dt_struct: DeviceTree::read_u32(&mut ptr),
+            }
+    }
+
+    pub fn get_base_address(&self) -> usize
+    {
+        self.dtb_base as usize
+    }
+
+    pub fn get_total_size(&self) -> usize
+    {
+        self.dtb_total_size as usize
     }
 
     /// Read a 32-bit unsigned integer from the device tree header, assuming big-endian format.
@@ -250,97 +260,97 @@ impl DeviceTree
             match word
             {
                 BEGIN_NODE =>
-                {
-                    // We're at a beginning of a new node, so break out of the loop.
-                    break;
-                },
+                    {
+                        // We're at a beginning of a new node, so break out of the loop.
+                        break;
+                    },
 
                 END_NODE =>
-                {
-                    // We've reached the end of a node, so we can stop iterating properties.
-                    break;
-                },
+                    {
+                        // We've reached the end of a node, so we can stop iterating properties.
+                        break;
+                    },
 
                 PROPERTY =>
-                {
-                    // Break down the property structure and call the callback with the property's
-                    // name and value.
-
-                    // The format of a property is:
-                    // 1. Property marker (4 bytes)
-                    // 2. Property size (4 bytes)
-                    // 3. Property name offset (4 bytes)
-                    // 4. Property value (variable length)
-
-                    // Move past the property marker.
-                    self.increment_offset(&mut current_offset, 4);
-
-                    // Get the property data size.
-                    let prop_size_ptr = unsafe { struct_ptr.add(current_offset) as *const u32 };
-
-                    let prop_size = unsafe { ptr::read_volatile(prop_size_ptr) };
-                    let prop_size = u32::from_be(prop_size);
-
-                    self.increment_offset(&mut current_offset, 4);
-
-                    // Get the property name string offset.
-                    let prop_name_offset_ptr = unsafe
-                        {
-                            struct_ptr.add(current_offset) as *const u32
-                        };
-
-                    let prop_name_offset = unsafe { ptr::read_volatile(prop_name_offset_ptr) };
-                    let prop_name_offset = u32::from_be(prop_name_offset);
-
-                    self.increment_offset(&mut current_offset, 4);
-
-                    // Get the bytes of the property value.
-                    let prop_value_ptr = unsafe { struct_ptr.add(current_offset) as *const u8 };
-
-                    // Get the property value as a slice.
-                    let prop_value = unsafe
-                        {
-                            from_raw_parts(prop_value_ptr, prop_size as usize)
-                        };
-
-                    // Move past the property value data, which is padded to a 4-byte boundary.
-                    self.increment_offset(&mut current_offset, prop_size as usize);
-
-                    // Get the property name string from the strings block.
-                    let off_dt_strings = self.off_dt_strings as usize;
-
-                    let name_ptr = unsafe
-                        {
-                            (self.dtb_base).add(off_dt_strings + prop_name_offset as usize)
-                        };
-
-                    let ( prop_name, _ ) = self.extract_node_name_to_buffer(name_ptr);
-
-                    // Call the callback with the property name and value.
-                    if !callback(prop_name, prop_value)
                     {
-                        // If the callback returns false, we stop iterating.
-                        break;
-                    }
-                },
+                        // Break down the property structure and call the callback with the
+                        // property's name and value.
+
+                        // The format of a property is:
+                        // 1. Property marker (4 bytes)
+                        // 2. Property size (4 bytes)
+                        // 3. Property name offset (4 bytes)
+                        // 4. Property value (variable length)
+
+                        // Move past the property marker.
+                        self.increment_offset(&mut current_offset, 4);
+
+                        // Get the property data size.
+                        let prop_size_ptr = unsafe { struct_ptr.add(current_offset) as *const u32 };
+
+                        let prop_size = unsafe { ptr::read_volatile(prop_size_ptr) };
+                        let prop_size = u32::from_be(prop_size);
+
+                        self.increment_offset(&mut current_offset, 4);
+
+                        // Get the property name string offset.
+                        let prop_name_offset_ptr = unsafe
+                            {
+                                struct_ptr.add(current_offset) as *const u32
+                            };
+
+                        let prop_name_offset = unsafe { ptr::read_volatile(prop_name_offset_ptr) };
+                        let prop_name_offset = u32::from_be(prop_name_offset);
+
+                        self.increment_offset(&mut current_offset, 4);
+
+                        // Get the bytes of the property value.
+                        let prop_value_ptr = unsafe { struct_ptr.add(current_offset) as *const u8 };
+
+                        // Get the property value as a slice.
+                        let prop_value = unsafe
+                            {
+                                from_raw_parts(prop_value_ptr, prop_size as usize)
+                            };
+
+                        // Move past the property value data, which is padded to a 4-byte boundary.
+                        self.increment_offset(&mut current_offset, prop_size as usize);
+
+                        // Get the property name string from the strings block.
+                        let off_dt_strings = self.off_dt_strings as usize;
+
+                        let name_ptr = unsafe
+                            {
+                                (self.dtb_base).add(off_dt_strings + prop_name_offset as usize)
+                            };
+
+                        let ( prop_name, _ ) = self.extract_node_name_to_buffer(name_ptr);
+
+                        // Call the callback with the property name and value.
+                        if !callback(prop_name, prop_value)
+                        {
+                            // If the callback returns false, we stop iterating.
+                            break;
+                        }
+                    },
 
                 NOP =>
-                {
-                    // No operation marker, just skip it.
-                    self.increment_offset(&mut current_offset, 4);
-                },
+                    {
+                        // No operation marker, just skip it.
+                        self.increment_offset(&mut current_offset, 4);
+                    },
 
                 END =>
-                {
-                    // End of structure block, break out of the loop.
-                    break;
-                },
+                    {
+                        // End of structure block, break out of the loop.
+                        break;
+                    },
 
                 _ =>
-                {
-                    // Unknown marker, just skip it.
-                    self.increment_offset(&mut current_offset, 4);
-                }
+                    {
+                        // Unknown marker, just skip it.
+                        self.increment_offset(&mut current_offset, 4);
+                    }
             }
         }
     }

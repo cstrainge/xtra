@@ -4,6 +4,8 @@
 
 use core::fmt::{ self, Display, Formatter };
 
+use xtra_kernel_shared::device_tree::DeviceTree;
+
 
 
 /// Represents a section of memory in the kernel layout,
@@ -43,13 +45,14 @@ impl SectionLayout
 #[derive(Copy, Clone)]
 pub struct KernelMemoryLayout
 {
-    pub kernel: SectionLayout,  // The entire kernel range in RAM.
-    pub text: SectionLayout,    // The memory used by the kernel code.
-    pub rodata: SectionLayout,  // The read-only data section of the kernel.
-    pub data: SectionLayout,    // The initialized data section of the kernel.
-    pub bss: SectionLayout,     // The uninitialized data section of the kernel.
-    pub stack: SectionLayout,   // The stacks for each hart in the system.
-    pub heap: SectionLayout     // Where the kernel's heap is located and its size.
+    pub kernel: SectionLayout,      // The entire kernel range in RAM.
+    pub text: SectionLayout,        // The memory used by the kernel code.
+    pub rodata: SectionLayout,      // The read-only data section of the kernel.
+    pub data: SectionLayout,        // The initialized data section of the kernel.
+    pub bss: SectionLayout,         // The uninitialized data section of the kernel.
+    pub stack: SectionLayout,       // The stacks for each hart in the system.
+    pub heap: SectionLayout,        // Where the kernel's heap is located and its size.
+    pub device_tree: SectionLayout  // The location and size of the device tree blob in memory.
 }
 
 
@@ -58,7 +61,7 @@ impl KernelMemoryLayout
 {
     /// Create a new instance of the kernel memory layout, this will read the kernel sections from
     /// the linker script and return a new `KernelMemoryLayout` instance.
-    pub fn new() -> Self
+    pub fn new(device_tree: &DeviceTree) -> Self
     {
         unsafe extern "C"
         {
@@ -150,6 +153,14 @@ impl KernelMemoryLayout
                         start: heap_start,
                         end: heap_end,
                         size: heap_end - heap_start
+                    },
+
+                device_tree:
+                    SectionLayout
+                    {
+                        start: device_tree.get_base_address(),
+                        end: device_tree.get_base_address() + device_tree.get_total_size(),
+                        size: device_tree.get_total_size()
                     }
             }
     }
@@ -165,7 +176,8 @@ impl KernelMemoryLayout
                 data: SectionLayout::zeroed(),
                 bss: SectionLayout::zeroed(),
                 stack: SectionLayout::zeroed(),
-                heap: SectionLayout::zeroed()
+                heap: SectionLayout::zeroed(),
+                device_tree: SectionLayout::zeroed()
             }
     }
 }
@@ -213,6 +225,19 @@ impl Display for KernelMemoryLayout
                  self.stack.start,
                  self.stack.end)?;
         write_size!(f, self.stack.size)?;
+        writeln!(f)?;
+
+        write!(f, "    .heap:           0x{:08x} - 0x{:08x}: ",
+                 self.heap.start,
+                 self.heap.end)?;
+        write_size!(f, self.heap.size)?;
+        writeln!(f)?;
+
+        writeln!(f, "  External:")?;
+        write!(f, "    .device_tree:    0x{:08x} - 0x{:08x}: ",
+                 self.device_tree.start,
+                 self.device_tree.end)?;
+        write_size!(f, self.device_tree.size)?;
         writeln!(f)?;
 
         Ok(())

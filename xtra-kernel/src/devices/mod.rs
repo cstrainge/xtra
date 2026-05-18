@@ -1,5 +1,5 @@
 
-use crate::arch::device_tree::DeviceTree;
+use xtra_kernel_shared::device_tree::DeviceTree;
 
 
 
@@ -13,4 +13,3 @@ pub fn activate_devices() -> Result<(), &'static str>
 {
     Ok(())
 }
-

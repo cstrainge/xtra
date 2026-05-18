@@ -7,8 +7,9 @@
 
 use core::fmt::{ self, Write };
 
-use crate::{ arch::device_tree::DeviceTree,
-             locking::spin_lock::SpinLock,
+use xtra_kernel_shared::device_tree::DeviceTree;
+
+use crate::{ locking::spin_lock::SpinLock,
              uart::SimpleUart };
 
 

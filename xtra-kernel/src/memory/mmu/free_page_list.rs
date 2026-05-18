@@ -733,8 +733,8 @@ pub fn init_free_page_list(kernel_memory: &KernelMemoryLayout,
 
         ||
 
-        (   address >= kernel_memory.heap.start
-         && address <  kernel_memory.heap.start + kernel_memory.heap.size)
+        (  address >= kernel_memory.device_tree.start
+        && address <  kernel_memory.device_tree.start + kernel_memory.device_tree.size)
     }
 
     // Check if the address is within a MMIO device range.

@@ -5,7 +5,7 @@ INCLUDE "shared_locations.ld"
 ENTRY(_start)
 
 
-__stack_size = 0x1000;     /* 4 KiB stack size per hart. */
+__stack_size = 0x8000;     /* 32 KiB stack size per hart. */
 __num_harts = 4;           /* We support a maximum of 4 harts. */
 
 
@@ -70,14 +70,16 @@ SECTIONS
 
     . = ALIGN(0x1000);
 
-    _kernel_end = .;
-
     _heap_start = KERNEL_HEAP_BASE;
-
-    . += KERNEL_HEAP_SIZE;
-
     _heap_end = KERNEL_HEAP_END;
 
+    _kernel_end = KERNEL_HEAP_END;
+
+    . = KERNEL_HEAP_END;
+
+    ASSERT(_heap_start >= _stack_end,      "Heap overlaps kernel image/stacks")
+    ASSERT(_heap_end >= _heap_start,       "Invalid heap range")
+    ASSERT(_kernel_end == KERNEL_HEAP_END, "Kernel end does not match heap end")
 
     /DISCARD/ :
     {

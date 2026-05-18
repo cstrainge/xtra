@@ -79,9 +79,9 @@ use core::{ arch::naked_asm,
             ptr::addr_of_mut,
             sync::atomic::{ AtomicBool, Ordering } };
 
-use xtra_kernel_shared::mount_table::XtraMountTable;
+use xtra_kernel_shared::{ device_tree::DeviceTree, mount_table::XtraMountTable };
 
-use crate::{ arch::{ device_tree::DeviceTree, get_core_index, print_cpu_info },
+use crate::{ arch::{ get_core_index, print_cpu_info },
              devices::{ activate_devices, walk_device_tree },
              filesystems::initialize_filesystems,
              interrupts::initialize_interrupts,
@@ -117,7 +117,7 @@ const KERNEL_PROFILE: &str = env!("PROFILE");
 /// **WARNING**: This **needs** to be kept in sync with the linker script as it defines the size of
 ///              the .stacks section in the kernel binary layout. If we change it here we need to
 ///              change it in the linker script as well.
-const STACK_SIZE: usize = 0x1000;
+const STACK_SIZE: usize = 0x8000;
 
 const _: () =
     {
@@ -308,7 +308,7 @@ pub extern "C" fn main(core_index: usize,
 
         // Determine where in RAM the kernel is loaded. We need to keep track of this so that we can
         // mark these pages as used in the memory manager.
-        let kernel_memory_layout = KernelMemoryLayout::new();
+        let kernel_memory_layout = KernelMemoryLayout::new(&device_tree);
 
         println!("{}", kernel_memory_layout);
 
