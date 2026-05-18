@@ -6,8 +6,6 @@
 // device the input is coming from. The latter is useful for things like the console subsystem where
 // we just want to know when a key is pressed and don't care which keyboard it came from.
 
-use crate::prelude::*;
-
 use xtra_kernel_shared::device_tree::DeviceTree;
 
 use crate::devices::DeviceDriverRegistry;
@@ -48,7 +46,7 @@ pub trait KeyboardDevice
 
     /// Polling interface, Read the current state of the keys pressed down on the keyboard along
     /// with the state of the modifier keys. It is up to the caller to keep track of key releases.
-    fn read_keys(&self) -> Option<(&Vec<u8>, KeyModifiers)>;
+    fn read_keys(&self) -> Option<(&[u8], KeyModifiers)>;
 
     /// Event driven interface. Register callback handlers for key press and release events.
     ///
@@ -61,6 +59,12 @@ pub trait KeyboardDevice
     /// from the `register_key_handlers` function.
     fn unregister_key_handlers(&mut self, handler_id: usize);
 }
+
+
+
+/// Maximum number of buttons that we will support on a mouse device, this is used to size the
+/// button array in the `MouseState` struct.
+const MAX_MOUSE_BUTTONS: usize = 16;
 
 
 
@@ -94,7 +98,7 @@ pub struct MouseState
     /// The state of the buttons on the mouse, this is a slice of all of the buttons on the mouse.
     /// where 0 is left, 1, the right, and 3 is the middle button. This slice can contain any
     /// number of additional buttons depending on the mouse itself.
-    pub buttons: Vec<bool>
+    pub buttons: [bool; MAX_MOUSE_BUTTONS]
 }
 
 
@@ -175,27 +179,26 @@ pub fn enumerate_mice(enumerator: MouseEnumerator) -> Result<(), &'static str>
 
 
 
-/// The enum representing the different types of HID devices that can be attached and recognized by
-/// the system.
-pub enum HidDevice
+/// A borrowed view of an attached HID device while enumerating the currently attached devices.
+pub enum HidDevice<'device>
 {
-    /// A keyboard has been attached or detached from the system.
-    Keyboard(Rc<dyn KeyboardDevice>),
+    /// A keyboard that is currently attached to the system.
+    Keyboard(&'device dyn KeyboardDevice),
 
-    /// A mouse has been attached or detached from the system.
-    Mouse(Rc<dyn MouseDevice>)
+    /// A mouse that is currently attached to the system.
+    Mouse(&'device dyn MouseDevice)
 }
 
 
 
 /// An attachment event for a supported HID device has occurred.
-pub enum Attachment
+pub enum Attachment<'device>
 {
     /// A supported HID device has been attached to the system.
-    Attached(HidDevice),
+    Attached(HidDevice<'device>),
 
     /// A supported HID device has been detached from the system.
-    Detached(HidDevice)
+    Detached(HidDevice<'device>)
 }
 
 
@@ -262,16 +265,60 @@ pub fn unregister_any_mouse_handlers(handler_id: usize)
 
 /// Run the provided callback function with a reference to the keyboard device associated with the
 /// given keyboard ID if it is currently attached to the system.
-pub fn with_attached_keyboard<handler>(keyboard_id: usize, callback: handler) -> bool
-    where handler: FnOnce(&dyn KeyboardDevice)
+///
+/// Returns true if the callback was called and false if the device was not attached.
+pub fn with_attached_keyboard<Handler>(keyboard_id: usize, callback: Handler) -> bool
+    where Handler: FnOnce(&dyn KeyboardDevice)
 {
     false
 }
 
 
 
-pub fn with_attached_mouse<handler>(mouse_id: usize, callback: handler) -> bool
-    where handler: FnOnce(&dyn MouseDevice)
+/// Given the ID of a mouse device, run the provided callback function with a reference to the mouse
+///  device if it is still attached to the system.
+pub fn with_attached_mouse<Handler>(mouse_id: usize, callback: Handler) -> bool
+    where Handler: FnOnce(&dyn MouseDevice)
 {
     false
+}
+
+
+
+/// Enumerate all of the attached keyboards and run the provided callback function for each one.
+///
+/// If there are no keyboards attached to the system then the callback will not be called at all.
+pub fn enumerate_attached_keyboards<Handler>(enumerator: Handler)
+    where Handler: FnMut(&dyn KeyboardDevice)
+{
+}
+
+
+
+/// Enumerate all of the attached mice and run the provided callback function for each one.
+///
+/// If there are no mice attached to the system then the callback will not be called at all.
+pub fn enumerate_attached_mice<Handler>(enumerator: Handler)
+    where Handler: FnMut(&dyn MouseDevice)
+{
+}
+
+
+
+/// Enumerate all of the attached HID devices and run the provided callback function for each one.
+/// This is a more general version of the `enumerate_attached_keyboards` and
+/// `enumerate_attached_mice` functions that allows the caller to handle all HID devices in a single
+/// callback function
+pub fn enumerate_attached_hid_devices<Handler>(mut enumerator: Handler)
+    where for<'device> Handler: FnMut(HidDevice<'device>)
+{
+    enumerate_attached_keyboards(|keyboard|
+        {
+            enumerator(HidDevice::Keyboard(keyboard))
+        });
+
+    enumerate_attached_mice(|mouse|
+        {
+            enumerator(HidDevice::Mouse(mouse))
+        });
 }
