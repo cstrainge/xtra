@@ -204,7 +204,7 @@ pub enum Attachment<'device>
 
 
 /// The event handler function for attachment events.
-pub type HidAttachmentHandler = fn(attachment: Attachment);
+pub type HidAttachmentHandler = for<'device> fn(attachment: Attachment<'device>);
 
 
 
