@@ -4,6 +4,8 @@ use xtra_kernel_shared::device_tree::DeviceTree;
 use crate::devices::DeviceDriverRegistry;
 
 
+// CLINT, RTC, PIT, HPET, APIC timer, etc.
+
 
 /// Register the driver probe functions for all of the timer and RTC device drivers in the system.
 pub fn register_driver_probes(registry: &mut DeviceDriverRegistry) -> Result<(), &'static str>

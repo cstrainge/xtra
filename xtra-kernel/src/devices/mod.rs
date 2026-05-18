@@ -4,7 +4,7 @@
 // physical device drivers and virtual devices drivers that sit on top of the physical devices,
 // such as console device drivers.
 
-use alloc::{ format, collections::BTreeMap};
+use alloc::{ format, collections::BTreeMap };
 
 use xtra_kernel_shared::device_tree::{ DeviceTree };
 
@@ -15,9 +15,6 @@ pub mod bus_devices;
 
 /// Block devices, such as hard drives, SSDs, etc.
 pub mod block_devices;
-
-///
-pub mod clint;
 
 /// Console devices, such as the VGA console, the serial console, etc.
 pub mod console;
@@ -41,24 +38,17 @@ pub mod mmio_devices;
 /// Network devices, such as Ethernet controllers, Wi-Fi adapters, etc.
 pub mod network_devices;
 
-///
-pub mod plic_devices;
-
 /// System level power control devices, such as the shutdown or restart controllers.
 pub mod power_devices;
 
 /// Serial devices, such as the UART, the 16550, etc.
 pub mod serial_devices;
 
-///
+/// System test devices like the QEMU test device or a system JTAG test device.
 pub mod test_devices;
 
-/// Timer devices, such as the system timer, the RTC, etc.
+/// Timer devices, such as the system timer, the RTC, CLINT, etc.
 pub mod timer_devices;
-
-/// Virtio device interface handler code. This is shared between the various virtio device types,
-/// such as block, network, graphics etc.
-pub mod virtio_devices;
 
 
 
@@ -97,19 +87,15 @@ pub fn initialize_device_registry() -> Result<DeviceDriverRegistry, &'static str
     // directly tied to any hardware and thus don't have a probe function to call.
     block_devices::register_driver_probes(&mut registry)?;
     bus_devices::register_driver_probes(&mut registry)?;
-    clint::register_driver_probes(&mut registry)?;
     cpu_devices::register_driver_probes(&mut registry)?;
-    hid_devices::register_driver_probes(&mut registry)?;
     graphics_devices::register_driver_probes(&mut registry)?;
     interrupt_controllers::register_driver_probes(&mut registry)?;
     mmio_devices::register_driver_probes(&mut registry)?;
     network_devices::register_driver_probes(&mut registry)?;
-    plic_devices::register_driver_probes(&mut registry)?;
     power_devices::register_driver_probes(&mut registry)?;
     serial_devices::register_driver_probes(&mut registry)?;
     test_devices::register_driver_probes(&mut registry)?;
     timer_devices::register_driver_probes(&mut registry)?;
-    virtio_devices::register_driver_probes(&mut registry)?;
 
     Ok(registry)
 }
@@ -186,23 +172,36 @@ pub fn walk_device_tree(device_tree: &DeviceTree,
 pub fn activate_devices() -> Result<(), &'static str>
 {
     // Activate and initialize the devices that we have discovered. We have to be careful here
-    // because many devices have dependencies on other devices. For example most devcies depend on
+    // because many devices have dependencies on other devices. For example most devices depend on
     // the interrupt controller initialized and active so that they can register their interrupt
     // handlers.
     cpu_devices::activate_devices()?;
     interrupt_controllers::activate_devices()?;
-    virtio_devices::activate_devices()?;
     mmio_devices::activate_devices()?;
-    bus_devices::activate_devices()?;
+
+    // Bus devices are a special case because they are the devices that other devices depend on to
+    // be initialized first. Then even more devices can be discovered by various bus specific
+    // probing mechanisms.
+    let bus_device_registry = bus_devices::activate_devices()?;
+
     power_devices::activate_devices()?;
     timer_devices::activate_devices()?;
-    clint::activate_devices()?;
-    plic_devices::activate_devices()?;
     block_devices::activate_devices()?;
     serial_devices::activate_devices()?;
     test_devices::activate_devices()?;
     graphics_devices::activate_devices()?;
-    hid_devices::activate_devices()?;
+
+    // Now that we've initialized the core physical devices we can now go to the attached device
+    // buses and probe them for their attached devices.
+    //
+    // Each bus device subsystem will have its own way of enumerating the devices attached to it and
+    // then activating the drivers for those devices. For example, the PCI bus will have a PCI
+    // enumeration process that walks the PCI configuration space to discover the attached devices
+    // and then activates the drivers for them.
+    //
+    // USB on the other hand will initialize now, but will also have to respond to devices being
+    // attached and detached from the system over the lifetime of the system.
+    bus_devices::enumerate_bus_devices(bus_device_registry)?;
 
     // Activate the virtual devices that sit on top of the physical devices, such as the console
     // device drivers.

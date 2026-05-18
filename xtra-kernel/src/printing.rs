@@ -16,6 +16,8 @@ use crate::{ locking::spin_lock::SpinLock,
 
 /// Global reference to the UART device used for printing. This is initialized at boot time and
 /// used throughout the kernel for logging output.
+/// TODO: Allow this to be switched over to a console device driver instead of talking directly to
+///       the UART.
 pub static mut PRINTING_UART: SimpleUart = SimpleUart::zeroed();
 
 
@@ -301,6 +303,9 @@ macro_rules! write_size
 
 /// Initializes the printing system by finding the first UART device in the device tree and setting
 /// it up for use. This function will panic if no UART device is found in the device tree.
+///
+/// TODO: Allow for the bootloader to be able to specify which device to use for system startup
+///       logging.
 pub fn init_printing(device_tree: &DeviceTree)
 {
     let mut found_uart = false;
@@ -366,4 +371,20 @@ pub fn init_printing(device_tree: &DeviceTree)
     {
         panic!("No UART device found in the device tree for logging.");
     }
+}
+
+
+
+/// Switch the printing system from the temporary serial device to a console device(s) so that we
+/// can print to the console instead of directly to the UART.
+///
+/// This also allows us to support multiple console devices, such as a serial console and a
+/// graphical console simultaneously.
+///
+/// TODO: This should be a Kernel configuration passed from the bootloader from a configuration file
+///       it discovers at system startup. Allow the system builder to specify how console devices
+///       are defined and utilized.
+pub fn switch_to_console_device(/*console_devices: Vec<ConsoleDevice>*/) -> Result<(), &'static str>
+{
+    Ok(())
 }

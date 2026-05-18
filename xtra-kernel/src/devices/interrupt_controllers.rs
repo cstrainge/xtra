@@ -5,6 +5,8 @@ use crate::devices::DeviceDriverRegistry;
 
 
 
+// PLIC!
+
 /// Register the driver probe functions for all of the interrupt controllers in the system.
 pub fn register_driver_probes(registry: &mut DeviceDriverRegistry) -> Result<(), &'static str>
 {
